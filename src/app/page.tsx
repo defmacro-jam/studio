@@ -1,13 +1,13 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, type DragEvent } from 'react'; // Import useCallback and DragEvent
-import type { RetroItem, PollResponse, User } from '@/lib/types';
+import type { RetroItem, PollResponse, User, Category } from '@/lib/types'; // Import Category
 import { PollSection } from '@/components/retrospectify/PollSection';
 import { PollResultsSection } from '@/components/retrospectify/PollResultsSection';
 import { RetroSection } from '@/components/retrospectify/RetroSection';
-import { categorizeJustification, type CategorizeJustificationOutput } from '@/ai/flows/categorize-justification';
+import { categorizeJustification } from '@/ai/flows/categorize-justification'; // Keep type import if only used for types here
+import { generateActionItem } from '@/ai/flows/generate-action-item'; // Import the new flow
 import { Toaster } from '@/components/ui/toaster';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -30,6 +30,7 @@ const mockInitialItems: RetroItem[] = [
     { id: 'w2', author: { id: 'user-789', name: 'Charlie Brown', avatarUrl: 'https://picsum.photos/id/3/100/100' }, content: 'Code reviews were very thorough.', timestamp: new Date(Date.now() - 3600000 * 5), category: 'well', replies: [
         { id: 'r1', author: { id: 'user-123', name: 'Alex Doe', avatarUrl: 'https://picsum.photos/id/1/100/100' }, content: 'Agreed, learned a lot!', timestamp: new Date(Date.now() - 3600000 * 4) }
     ]},
+    { id: 'd2', author: { id: 'user-123', name: 'Alex Doe', avatarUrl: 'https://picsum.photos/id/1/100/100' }, content: 'Need clarity on the Q3 roadmap priorities.', timestamp: new Date(Date.now() - 3600000 * 1.5), category: 'discuss' }, // Added another discussion item
 ];
 
 const mockInitialPollResponses: PollResponse[] = [
@@ -38,8 +39,6 @@ const mockInitialPollResponses: PollResponse[] = [
      { id: 'p3', author: { id: 'user-555', name: 'Dana Scully', avatarUrl: 'https://picsum.photos/id/4/100/100' }, rating: 2, justification: "Project X team was overly needy on the help channel.", timestamp: new Date(Date.now() - 3600000 * 8) },
 ];
 
-type Category = 'well' | 'improve' | 'discuss' | 'action';
-
 
 export default function RetroSpectifyPage() {
   const [retroItems, setRetroItems] = useState<RetroItem[]>(mockInitialItems);
@@ -47,7 +46,7 @@ export default function RetroSpectifyPage() {
   const [currentUser] = useState<User>(mockCurrentUser);
   const [isLoading, setIsLoading] = useState(true);
   const [hasSubmitted, setHasSubmitted] = useState(false);
-  const [isEditingPoll, setIsEditingPoll] = useState(false);
+  const [isEditingPoll, setIsEditingPoll] = useState(false); // Fix: Initialize with false
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null); // State for dragging item ID
   const { toast } = useToast();
 
@@ -101,7 +100,7 @@ export default function RetroSpectifyPage() {
   }, []);
 
 
-  const processJustification = useCallback(async (rating: number, justification: string, responseId: string, currentUserId: string) => {
+  const processJustification = useCallback(async (rating: number, justification: string, responseId: string) => {
        // Remove any previously generated items for this poll response BEFORE adding new ones
        removeExistingPollItems(responseId);
 
@@ -158,19 +157,20 @@ export default function RetroSpectifyPage() {
                  description: description,
              });
           } else if (justification.trim()) {
+             // If AI returns empty but justification exists, treat as discussion
              const newItem: RetroItem = {
                id: `poll-${responseId}-discuss`,
                pollResponseId: responseId,
                author: author,
-               content: justification,
+               content: justification, // Use the full justification
                timestamp: new Date(),
-               category: 'discuss',
+               category: 'discuss', // Default to discuss if no categories found
                isFromPoll: true,
              };
              setRetroItems(prev => [...prev, newItem]);
              toast({
                title: isEditingPoll ? "Feedback Updated" : "Feedback Added",
-               description: "Your feedback was added to 'Discussion Topics' for review.",
+               description: "Your feedback couldn't be auto-categorized, added to 'Discussion Topics'.",
                variant: "default",
              });
           }
@@ -185,9 +185,9 @@ export default function RetroSpectifyPage() {
                id: `poll-${responseId}-error`,
                pollResponseId: responseId,
                author: author,
-               content: justification,
+               content: justification, // Use full justification on error
                timestamp: new Date(),
-               category: 'discuss',
+               category: 'discuss', // Fallback to discuss on error
                isFromPoll: true,
            };
            setRetroItems(prev => [...prev, newItem]);
@@ -241,7 +241,7 @@ export default function RetroSpectifyPage() {
     }
 
     // Process justification (will also remove old items if updating)
-    processJustification(rating, justification, responseId, currentUser.id);
+    processJustification(rating, justification, responseId);
 
     setIsEditingPoll(false); // Exit editing mode after submit/update
   }, [currentUser, isEditingPoll, pollResponses, processJustification, toast]); // Include dependencies
@@ -269,6 +269,54 @@ export default function RetroSpectifyPage() {
       });
   }, [currentUser, toast]); // Include dependencies
 
+  // Handle generating a new action item from a discussion topic
+  const handleGenerateActionItem = useCallback(async (discussionItemId: string) => {
+      const discussionItem = retroItems.find(item => item.id === discussionItemId);
+
+      if (!discussionItem || discussionItem.category !== 'discuss') {
+          toast({ title: "Error", description: "Could not find the discussion topic.", variant: "destructive" });
+          return;
+      }
+
+      // Optionally: Check if user is allowed to create action items (e.g., only owner?)
+      // For now, allow anyone to trigger generation from a discussion topic
+
+      toast({ title: "Generating Action Item...", description: "Please wait.", variant: "default" });
+
+      try {
+          const { actionItem: generatedContent } = await generateActionItem({ discussionTopic: discussionItem.content });
+
+          // Create the new action item using the generated content
+          const newActionItem: RetroItem = {
+              id: `action-${Date.now()}`, // Unique ID for the new action item
+              author: currentUser, // Or maybe the author of the original discussion? Decide ownership. For now, current user.
+              content: generatedContent,
+              timestamp: new Date(),
+              category: 'action',
+              isFromPoll: false, // Action items generated this way are not directly from polls
+              // Optional: Link back to the original discussion item?
+              // linkedDiscussionId: discussionItem.id,
+          };
+
+          setRetroItems(prev => [...prev, newActionItem]);
+
+          toast({
+              title: "Action Item Created",
+              description: `Generated action item: "${generatedContent}"`,
+          });
+
+      } catch (error) {
+          console.error("Error generating action item:", error);
+          toast({
+              title: "Action Item Generation Failed",
+              description: "Could not generate an action item from the discussion topic.",
+              variant: "destructive",
+          });
+      }
+
+  }, [retroItems, currentUser, toast]); // Include dependencies
+
+
   const handleAddReply = useCallback((itemId: string, replyContent: string) => {
     setRetroItems(prev => prev.map(item => {
       if (item.id === itemId) {
@@ -277,7 +325,8 @@ export default function RetroSpectifyPage() {
           author: currentUser,
           content: replyContent,
           timestamp: new Date(),
-          isFromPoll: false,
+          isFromPoll: false, // Replies are not from polls
+          category: item.category, // Replies inherit category, though maybe not needed
         };
         return {
           ...item,
@@ -312,53 +361,77 @@ export default function RetroSpectifyPage() {
 
 
    // --- Drag and Drop Handlers ---
-   const handleDragStart = useCallback((e: DragEvent<HTMLDivElement>) => {
-      const itemId = e.currentTarget.getAttribute('data-item-id'); // Assuming card has data-item-id
-      if (itemId) {
-          // Check if the item belongs to the current user
-          const item = retroItems.find(i => i.id === itemId);
-          if (item && item.author.id === currentUser.id) {
-             setDraggingItemId(itemId);
-             e.dataTransfer.setData('text/plain', itemId); // Keep this for compatibility
-             e.dataTransfer.effectAllowed = "move";
-          } else {
-              e.preventDefault(); // Prevent dragging if not the owner
-          }
-      }
-   }, [currentUser.id, retroItems]); // Ensure retroItems is a dependency
+   const handleDragStart = useCallback((itemId: string) => {
+     setDraggingItemId(itemId);
+     // Data transfer logic is handled within RetroItemCard's onDragStart
+   }, []);
+
 
    const handleDragEnd = useCallback(() => {
       setDraggingItemId(null);
    }, []);
 
+    // Updated handleMoveItem to incorporate AI generation for discuss -> action
     const handleMoveItem = useCallback((itemId: string, targetCategory: Category) => {
         const itemToMove = retroItems.find(item => item.id === itemId);
 
-        // Only allow moving if the item exists, belongs to the current user, and is changing category
-        if (itemToMove && itemToMove.author.id === currentUser.id && itemToMove.category !== targetCategory) {
-            setRetroItems(prev =>
-                prev.map(item =>
-                    item.id === itemId
-                        ? { ...item, category: targetCategory, timestamp: new Date() } // Update category and timestamp
-                        : item
-                )
-            );
-            toast({
-                title: "Item Moved",
-                description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'action' ? 'Action Items' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`
-            });
-        } else if (itemToMove && itemToMove.author.id !== currentUser.id) {
+        // Check if item exists and belongs to the current user
+        if (!itemToMove || itemToMove.author.id !== currentUser.id) {
              toast({
                 title: "Cannot Move Item",
                 description: "You can only move your own items.",
                 variant: "destructive"
             });
+            setDraggingItemId(null); // Clear dragging state
+            return;
         }
-        setDraggingItemId(null); // Clear dragging state after attempt
-    }, [currentUser.id, retroItems, toast]); // Ensure retroItems and currentUser.id are dependencies
+
+        // Check if the category is actually changing
+        if (itemToMove.category === targetCategory) {
+            setDraggingItemId(null); // No change, clear dragging state
+            return;
+        }
+
+        // *** Special Case: Moving from 'discuss' to 'action' ***
+        if (itemToMove.category === 'discuss' && targetCategory === 'action') {
+            // Instead of moving, trigger AI generation and DO NOT modify the original item
+            handleGenerateActionItem(itemId);
+            setDraggingItemId(null); // Clear dragging state after triggering generation
+            return; // Stop execution here, don't proceed to the generic move logic
+        }
+
+         // *** Restriction: Prevent moving *anything* directly into 'action' ***
+         // (Action items are only created via direct add or AI generation from 'discuss')
+         if (targetCategory === 'action') {
+             toast({
+                 title: "Cannot Move to Action Items",
+                 description: "Action Items are generated from Discussion Topics or added manually.",
+                 variant: "destructive",
+             });
+             setDraggingItemId(null); // Clear dragging state
+             return; // Stop execution
+         }
+
+
+        // --- Generic Move Logic (for all other valid moves) ---
+        setRetroItems(prev =>
+            prev.map(item =>
+                item.id === itemId
+                    ? { ...item, category: targetCategory, timestamp: new Date() } // Update category and timestamp
+                    : item
+            )
+        );
+        toast({
+            title: "Item Moved",
+            description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".` // Removed action from description
+        });
+
+        setDraggingItemId(null); // Clear dragging state after a successful move
+    }, [currentUser.id, retroItems, toast, handleGenerateActionItem]); // Ensure all dependencies are included
 
 
   const filterItems = (category: Category) => {
+    // Filter top-level items (not replies) by category and sort by timestamp
     const topLevelItems = retroItems.filter(item => !retroItems.some(parent => parent.replies?.some(reply => reply.id === item.id)));
     return topLevelItems.filter(item => item.category === category).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
   };
@@ -394,12 +467,7 @@ export default function RetroSpectifyPage() {
 
 
   return (
-    <div
-        className="container mx-auto p-4 md:p-8 max-w-screen-2xl"
-        // Drag handlers removed from global div, handled by RetroItemCard and RetroSection
-        // onDragStart={handleDragStart}
-        // onDragEnd={handleDragEnd}
-    >
+    <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
         <header className="mb-8 flex justify-between items-center">
             <h1 className="text-3xl font-bold text-primary">RetroSpectify</h1>
             <div className="flex items-center space-x-3">
@@ -432,62 +500,74 @@ export default function RetroSpectifyPage() {
       </div>
 
       {/* Retro Board Sections */}
+      {/* Pass drag handlers down to RetroSection */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <RetroSection
           title="What Went Well"
-          category="well" // Pass category
+          category="well"
           items={filterItems('well')}
           currentUser={currentUser}
           onAddItem={handleAddItem('well')}
           onAddReply={handleAddReply}
-          onMoveItem={handleMoveItem} // Pass move handler
+          onMoveItem={handleMoveItem}
           onDeleteItem={handleDeleteItem}
           allowAddingItems={true}
-          draggingItemId={draggingItemId} // Pass dragging state
+          draggingItemId={draggingItemId}
+          onDragStartItem={handleDragStart} // Pass drag start handler
+          onDragEndItem={handleDragEnd}     // Pass drag end handler
           className="bg-teal-50/50 border-teal-200 dark:bg-teal-900/20 dark:border-teal-700/50"
         />
         <RetroSection
           title="What Could Be Improved"
-          category="improve" // Pass category
+          category="improve"
           items={filterItems('improve')}
           currentUser={currentUser}
           onAddItem={handleAddItem('improve')}
           onAddReply={handleAddReply}
-          onMoveItem={handleMoveItem} // Pass move handler
+          onMoveItem={handleMoveItem}
           onDeleteItem={handleDeleteItem}
           allowAddingItems={true}
-          draggingItemId={draggingItemId} // Pass dragging state
+          draggingItemId={draggingItemId}
+          onDragStartItem={handleDragStart} // Pass drag start handler
+          onDragEndItem={handleDragEnd}     // Pass drag end handler
           className="bg-amber-50/50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-700/50"
         />
         <RetroSection
           title="Discussion Topics"
-          category="discuss" // Pass category
+          category="discuss"
           items={filterItems('discuss')}
           currentUser={currentUser}
           onAddItem={handleAddItem('discuss')}
           onAddReply={handleAddReply}
-          onMoveItem={handleMoveItem} // Pass move handler
+          onMoveItem={handleMoveItem}
           onDeleteItem={handleDeleteItem}
           allowAddingItems={true}
-          draggingItemId={draggingItemId} // Pass dragging state
+          draggingItemId={draggingItemId}
+          onDragStartItem={handleDragStart} // Pass drag start handler
+          onDragEndItem={handleDragEnd}     // Pass drag end handler
           className="bg-blue-50/50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-700/50"
+          // Indicate that dropping on Action Items is special for 'discuss' items
+          isDropTargetForActionGeneration={true}
         />
         <RetroSection
           title="Action Items"
-          category="action" // Pass category
+          category="action"
           items={filterItems('action')}
           currentUser={currentUser}
           onAddItem={handleAddItem('action')}
           onAddReply={handleAddReply}
-          onMoveItem={handleMoveItem} // Pass move handler
+          onMoveItem={handleMoveItem} // Pass move handler (though it prevents direct moves here)
           onDeleteItem={handleDeleteItem}
-          allowAddingItems={true}
-          draggingItemId={draggingItemId} // Pass dragging state
+          allowAddingItems={true} // Allow manual adding
+          draggingItemId={draggingItemId}
+          onDragStartItem={handleDragStart} // Pass drag start handler
+          onDragEndItem={handleDragEnd}     // Pass drag end handler
           className="bg-purple-50/50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-700/50"
+          // Disable dropping for regular moves, but allow for the AI generation case (handled by onMoveItem logic)
+          // isDropDisabled={true} // We handle drop disabling in `handleMoveItem` logic based on source
         />
       </div>
        <Toaster />
     </div>
   );
 }
-
