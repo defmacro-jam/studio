@@ -33,8 +33,9 @@ const mockInitialItems: RetroItem[] = [
 
 const mockInitialPollResponses: PollResponse[] = [
      // Example poll responses (can be empty initially)
-     { id: 'p1', author: { id: 'user-456', name: 'Bob Smith', avatarUrl: '/avatars/bob.png' }, rating: 4, justification: 'Good progress overall, minor hiccup with API.', timestamp: new Date(Date.now() - 3600000 * 6) },
+     { id: 'p1', author: { id: 'user-456', name: 'Bob Smith', avatarUrl: 'https://picsum.photos/id/2/100/100' }, rating: 4, justification: 'Good progress overall, minor hiccup with API.', timestamp: new Date(Date.now() - 3600000 * 6) },
      { id: 'p2', author: { id: 'user-789', name: 'Charlie Brown', avatarUrl: 'https://picsum.photos/id/3/100/100' }, rating: 5, justification: "Loved the free cookies!", timestamp: new Date(Date.now() - 3600000 * 7) },
+     { id: 'p3', author: { id: 'user-555', name: 'Dana Scully', avatarUrl: 'https://picsum.photos/id/4/100/100' }, rating: 2, justification: "Project X team was overly needy on the help channel.", timestamp: new Date(Date.now() - 3600000 * 8) },
 ];
 
 export default function RetroSpectifyPage() {
@@ -42,23 +43,28 @@ export default function RetroSpectifyPage() {
   const [pollResponses, setPollResponses] = useState<PollResponse[]>(mockInitialPollResponses);
   const [currentUser, setCurrentUser] = useState<User>(mockCurrentUser);
   const [isLoading, setIsLoading] = useState(true); // Loading state
+  const [hasSubmitted, setHasSubmitted] = useState(false); // Track user submission state locally
   const { toast } = useToast();
 
-  // Simulate loading data
-   useEffect(() => {
-    // Replace with actual data fetching
+   // Check initial submission status on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const submittedLocally = localStorage.getItem(`pollSubmitted-${currentUser.id}`);
+      setHasSubmitted(!!submittedLocally);
+    }
+    // Simulate loading data
     const timer = setTimeout(() => {
         // In a real app, fetch initialItems and pollResponses here
         setIsLoading(false);
     }, 1500); // Simulate 1.5 second load time
     return () => clearTimeout(timer);
-  }, []); // Added empty dependency array
+  }, [currentUser.id]);
 
-  const hasUserSubmittedPoll = useMemo(() => {
-    // Also check local storage in case of refresh after submission but before state persistence (if using server state)
-     const submittedLocally = typeof window !== 'undefined' && localStorage.getItem(`pollSubmitted-${currentUser.id}`);
-    return pollResponses.some(resp => resp.author.id === currentUser.id) || !!submittedLocally;
-  }, [pollResponses, currentUser.id]);
+  // Derived state to determine if the poll should be shown or results
+  const shouldShowResults = useMemo(() => {
+    return hasSubmitted || pollResponses.some(resp => resp.author.id === currentUser.id);
+  }, [hasSubmitted, pollResponses, currentUser.id]);
+
 
   const processJustification = async (rating: number, justification: string, responseId: string) => {
       if (!justification.trim()) {
@@ -154,7 +160,8 @@ export default function RetroSpectifyPage() {
 
 
   const handlePollSubmit = (rating: number, justification: string) => {
-    if (hasUserSubmittedPoll) return; // Prevent double submission
+    // Prevent double submission visually and functionally
+    if (shouldShowResults) return;
 
     const newResponse: PollResponse = {
       id: `resp-${Date.now()}`, // Simple unique ID
@@ -164,6 +171,8 @@ export default function RetroSpectifyPage() {
       timestamp: new Date(),
     };
     setPollResponses(prev => [...prev, newResponse]);
+    setHasSubmitted(true); // Update local submission state
+
      // Persist submission status locally in case of refresh
     if (typeof window !== 'undefined') {
         localStorage.setItem(`pollSubmitted-${currentUser.id}`, 'true');
@@ -172,7 +181,7 @@ export default function RetroSpectifyPage() {
     processJustification(rating, justification, newResponse.id);
   };
 
-  const handleAddItem = (category: 'discuss' | 'action') => (content: string) => {
+  const handleAddItem = (category: 'well' | 'improve' | 'discuss' | 'action') => (content: string) => {
     const newItem: RetroItem = {
       id: `${category}-${Date.now()}`,
       author: currentUser,
@@ -184,7 +193,7 @@ export default function RetroSpectifyPage() {
     setRetroItems(prev => [...prev, newItem]);
      toast({
         title: "Item Added",
-        description: `Your item was added to "${category === 'discuss' ? 'Discussion Topics' : 'Action Items'}".`,
+        description: `Your item was added to "${category === 'discuss' ? 'Discussion Topics' : category === 'action' ? 'Action Items' : category === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`,
       });
   };
 
@@ -273,7 +282,7 @@ export default function RetroSpectifyPage() {
 
       {/* Poll Section or Results Section */}
       <div className="mb-6 md:mb-8">
-        {hasUserSubmittedPoll ? (
+        {shouldShowResults ? (
             <PollResultsSection responses={pollResponses} />
         ) : (
             <PollSection
@@ -289,20 +298,20 @@ export default function RetroSpectifyPage() {
           title="What Went Well"
           items={filterItems('well')}
           currentUser={currentUser}
-          onAddItem={() => {}} // No direct adding
+          onAddItem={handleAddItem('well')} // Allow adding 'well' items
           onAddReply={handleAddReply}
           onDeleteItem={handleDeleteItem} // Allow deleting poll-generated items
-          allowAddingItems={false} // Items come from Poll
+          allowAddingItems={true} // Enable adding
           className="bg-teal-50/50 border-teal-200"
         />
         <RetroSection
           title="What Could Be Improved"
           items={filterItems('improve')}
           currentUser={currentUser}
-          onAddItem={() => {}} // No direct adding
+          onAddItem={handleAddItem('improve')} // Allow adding 'improve' items
           onAddReply={handleAddReply}
            onDeleteItem={handleDeleteItem} // Allow deleting poll-generated items
-          allowAddingItems={false} // Items come from Poll
+          allowAddingItems={true} // Enable adding
           className="bg-amber-50/50 border-amber-200"
         />
         <RetroSection

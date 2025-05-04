@@ -2,22 +2,20 @@
 
 import { useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis, LabelList } from "recharts";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartConfig } from "@/components/ui/chart";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis, LabelList, Tooltip } from "recharts";
 import type { PollResponse } from "@/lib/types";
-import { ChartConfig } from "@/components/ui/chart"; // Import ChartConfig type
-
 
 interface PollResultsSectionProps {
   responses: PollResponse[];
 }
 
-// Define the chart configuration
+// Define the chart configuration with specific theme colors
 const chartConfig = {
   count: {
     label: "Votes",
   },
-  "1": { label: "1 Star", color: "hsl(var(--chart-1))" },
+  "1": { label: "1 Star", color: "hsl(var(--chart-1))" }, // Use chart colors from theme
   "2": { label: "2 Stars", color: "hsl(var(--chart-2))" },
   "3": { label: "3 Stars", color: "hsl(var(--chart-3))" },
   "4": { label: "4 Stars", color: "hsl(var(--chart-4))" },
@@ -40,11 +38,11 @@ export function PollResultsSection({ responses }: PollResultsSectionProps) {
 
     const chartData = useMemo(() => {
         return [
-            { rating: 1, count: ratingCounts[1], fill: "var(--color-1)" },
-            { rating: 2, count: ratingCounts[2], fill: "var(--color-2)" },
-            { rating: 3, count: ratingCounts[3], fill: "var(--color-3)" },
-            { rating: 4, count: ratingCounts[4], fill: "var(--color-4)" },
-            { rating: 5, count: ratingCounts[5], fill: "var(--color-5)" },
+            { rating: "1 ★", count: ratingCounts[1], fill: "var(--color-1)" },
+            { rating: "2 ★", count: ratingCounts[2], fill: "var(--color-2)" },
+            { rating: "3 ★", count: ratingCounts[3], fill: "var(--color-3)" },
+            { rating: "4 ★", count: ratingCounts[4], fill: "var(--color-4)" },
+            { rating: "5 ★", count: ratingCounts[5], fill: "var(--color-5)" },
         ];
     }, [ratingCounts]);
 
@@ -58,50 +56,57 @@ export function PollResultsSection({ responses }: PollResultsSectionProps) {
     }, [responses, totalResponses]);
 
     return (
-        <Card className="shadow-md">
-            <CardHeader>
-                <CardTitle className="text-lg font-semibold">Weekly Sentiment Results</CardTitle>
-                 <CardDescription>
-                    Based on {totalResponses} response{totalResponses !== 1 ? 's' : ''}.
-                    {totalResponses > 0 && ` Average Rating: ${averageRating.toFixed(1)} stars.`}
+        <Card className="shadow-lg border-border/80 rounded-lg">
+            <CardHeader className="pb-2">
+                <CardTitle className="text-xl font-bold text-primary">Weekly Sentiment Snapshot</CardTitle>
+                 <CardDescription className="text-sm">
+                    {totalResponses > 0
+                        ? `Average Rating: ${averageRating.toFixed(1)} ★ (from ${totalResponses} response${totalResponses !== 1 ? 's' : ''})`
+                        : `No responses yet.`
+                    }
                 </CardDescription>
             </CardHeader>
             <CardContent>
                  {totalResponses > 0 ? (
-                    <ChartContainer config={chartConfig} className="h-[200px] w-full">
+                    <ChartContainer config={chartConfig} className="h-[250px] w-full">
                          <BarChart
-                            accessibilityLayer // Improves accessibility
                             data={chartData}
+                            layout="vertical" // Change to vertical layout
                             margin={{
-                                top: 20, // Add space for labels
-                                right: 10,
-                                left: 0,
-                                bottom: 5,
+                                top: 10,
+                                right: 30, // More space for labels on the right
+                                left: 10,
+                                bottom: 10,
                             }}
+                            barCategoryGap="20%" // Add gap between bars
                          >
-                            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                            <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
                              <XAxis
-                                dataKey="rating"
+                                type="number"
+                                dataKey="count"
+                                axisLine={false}
                                 tickLine={false}
                                 tickMargin={10}
-                                axisLine={false}
-                                tickFormatter={(value) => `${value} ★`} // Add star symbol
+                                allowDecimals={false} // Ensure integer ticks
                              />
                              <YAxis
-                                allowDecimals={false} // Ensure integer ticks for counts
-                                tickMargin={10}
-                                axisLine={false}
+                                dataKey="rating"
+                                type="category" // Use category type for y-axis
                                 tickLine={false}
+                                axisLine={false}
+                                tickMargin={10}
+                                width={60} // Adjust width for labels if needed
                              />
-                             <ChartTooltip
-                                cursor={false} // Disable cursor line on hover
+                             <Tooltip
+                                cursor={{ fill: 'hsl(var(--accent) / 0.2)' }} // Lighter hover effect
                                 content={<ChartTooltipContent indicator="line" />}
                              />
-                            <Bar dataKey="count" radius={4}>
+                            <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={25}>
                                 <LabelList
-                                    position="top"
-                                    offset={8} // Adjust offset as needed
-                                    className="fill-foreground"
+                                    dataKey="count"
+                                    position="right" // Position labels to the right
+                                    offset={8}
+                                    className="fill-foreground font-medium"
                                     fontSize={12}
                                     formatter={(value: number) => (value > 0 ? value : '')} // Only show label if count > 0
                                 />
@@ -109,7 +114,9 @@ export function PollResultsSection({ responses }: PollResultsSectionProps) {
                          </BarChart>
                     </ChartContainer>
                  ) : (
-                    <p className="text-center text-muted-foreground py-4">No poll responses submitted yet.</p>
+                    <div className="h-[250px] flex items-center justify-center">
+                        <p className="text-center text-muted-foreground py-4">Waiting for poll responses...</p>
+                    </div>
                  )}
             </CardContent>
         </Card>
