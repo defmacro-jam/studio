@@ -7,7 +7,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartConfig } from "
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis, LabelList } from "recharts";
 import type { PollResponse } from "@/lib/types"; // Import User type removed as it's implicitly handled via PollResponse
 import { Button } from "@/components/ui/button";
-import { Edit, ChevronDown } from "lucide-react"; // Import ChevronDown for accordion indicator
+import { Edit } from "lucide-react"; // Removed ChevronDown as it's handled by AccordionTrigger
 import {
   Accordion,
   AccordionContent,
@@ -81,22 +81,24 @@ export function PollResultsSection({ responses, onEdit }: PollResultsSectionProp
                  <Card className="shadow-lg border-border/80 rounded-lg bg-card">
                      {/* Use CardHeader for padding and structure, and flexbox for layout */}
                      <CardHeader className="pb-4 pt-4 px-6 flex flex-row justify-between items-center w-full">
-                         {/* AccordionTrigger now only wraps the clickable title/description area */}
-                         <AccordionTrigger className="p-0 hover:no-underline flex-grow">
-                             <div className="flex items-center space-x-4"> {/* Group title/desc */}
-                                 <div>
-                                    <CardTitle className="text-xl font-bold text-primary">Weekly Sentiment</CardTitle>
-                                    <CardDescription className="text-sm">
-                                        {totalResponses > 0
-                                            ? `Avg: ${averageRating.toFixed(1)} ★ (${totalResponses} vote${totalResponses !== 1 ? 's' : ''})`
-                                            : `No responses yet.`
-                                        }
-                                    </CardDescription>
+                         {/* Wrapper div for the trigger content */}
+                         <div className="flex-grow">
+                             <AccordionTrigger className="p-0 hover:no-underline flex w-full"> {/* Removed flex-grow from trigger */}
+                                 <div className="flex items-center space-x-4 text-left"> {/* Ensure text aligns left */}
+                                     <div>
+                                        <CardTitle className="text-xl font-bold text-primary">Weekly Sentiment</CardTitle>
+                                        <CardDescription className="text-sm">
+                                            {totalResponses > 0
+                                                ? `Avg: ${averageRating.toFixed(1)} ★ (${totalResponses} vote${totalResponses !== 1 ? 's' : ''})`
+                                                : `No responses yet.`
+                                            }
+                                        </CardDescription>
+                                     </div>
+                                     {/* Chevron is automatically added by AccordionTrigger */}
                                  </div>
-                                 {/* Chevron is automatically added by AccordionTrigger, no need for manual one */}
-                             </div>
-                         </AccordionTrigger>
-                         {/* Edit Button is now a sibling to AccordionTrigger, not a child */}
+                             </AccordionTrigger>
+                         </div>
+                         {/* Edit Button is a sibling to the trigger's wrapper */}
                          {onEdit && (
                             <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(); }} className="ml-4 flex-shrink-0"> {/* Added ml-4 for spacing */}
                                 <Edit className="mr-2 h-4 w-4" />

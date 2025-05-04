@@ -29,14 +29,14 @@ const AccordionTrigger = React.forwardRef<
     <AccordionPrimitive.Trigger
       ref={ref}
       className={cn(
-        "group flex items-center justify-between font-medium transition-all [&[data-state=open]>svg]:rotate-180", // Removed default py-4, hover:underline and flex-1
+        "group flex items-center justify-between font-medium transition-all [&[data-state=open]>svg]:rotate-180", // Removed default py-4, hover:underline, and explicitly removed flex-1
         className
       )}
       {...props}
     >
       {children}
       {/* Conditionally render chevron only if children don't already include one? Or adjust styling */}
-      <ChevronDown className="h-4 w-4 shrink-0 transition-transform duration-200 text-muted-foreground group-hover:text-foreground ml-4" /> {/* Adjusted margin and color */}
+      <ChevronDown className="h-4 w-4 shrink-0 transition-transform duration-200 text-muted-foreground group-hover:text-foreground ml-auto pl-4" /> {/* Use ml-auto and pl-4 for spacing */}
     </AccordionPrimitive.Trigger>
   </AccordionPrimitive.Header>
 ))
