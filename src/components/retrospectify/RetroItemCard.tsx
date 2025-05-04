@@ -14,10 +14,20 @@ interface RetroItemCardProps {
   currentUser: User;
   onAddReply: (itemId: string, replyContent: string) => void;
   onDeleteItem?: (itemId: string) => void; // Optional delete handler
+  onDragStartItem: (itemId: string) => void; // Callback for drag start
+  onDragEndItem: () => void; // Callback for drag end
   isDragging?: boolean; // Optional prop to style when dragging
 }
 
-export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem, isDragging }: RetroItemCardProps) {
+export function RetroItemCard({
+    item,
+    currentUser,
+    onAddReply,
+    onDeleteItem,
+    onDragStartItem,
+    onDragEndItem,
+    isDragging
+}: RetroItemCardProps) {
   const [showReplyInput, setShowReplyInput] = useState(false);
   const [replyContent, setReplyContent] = useState('');
 
@@ -34,7 +44,9 @@ export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem, isD
   // (The page component handles the editability check before calling onDeleteItem)
   const canDelete = onDeleteItem && item.author.id === currentUser.id;
 
-  const allowReply = !item.isFromPoll; // Do not allow replies on items generated from poll justifications
+  // Allow replies on items from polls, discussion, and action items.
+  // Disallow replies ONLY on manually added 'well' or 'improve' items.
+  const allowReply = !( !item.isFromPoll && (item.category === 'well' || item.category === 'improve') );
 
   // Allow the current user to drag their own items.
   const isDraggable = item.author.id === currentUser.id;
@@ -47,12 +59,14 @@ export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem, isD
     e.dataTransfer.setData('text/plain', item.id); // Send item ID
     e.dataTransfer.setData('application/json', JSON.stringify({ id: item.id, originalCategory: item.category })); // Send ID and original category
     e.dataTransfer.effectAllowed = "move";
+     onDragStartItem(item.id); // Notify parent component
      // Optional: Add a class to visually indicate dragging
      // e.currentTarget.classList.add('opacity-50');
   };
 
    const handleDragEnd = (e: DragEvent<HTMLDivElement>) => {
       if (!isDraggable) return;
+      onDragEndItem(); // Notify parent component
       // Optional: Remove dragging class
      // e.currentTarget.classList.remove('opacity-50');
    };
@@ -68,7 +82,7 @@ export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem, isD
        )}
        draggable={isDraggable} // Only make draggable if allowed
        onDragStart={handleDragStart}
-       onDragEnd={handleDragEnd} // Optional: for cleanup
+       onDragEnd={handleDragEnd} // Use the new handler
        data-item-id={item.id} // Ensure item ID is available for page-level drag handlers if needed
     >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
@@ -97,7 +111,7 @@ export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem, isD
            <p className="text-xs text-muted-foreground/70 italic mt-1">(From sentiment poll)</p>
          )}
       </CardContent>
-      {allowReply && ( // Only show reply button if allowed (not from poll)
+      {allowReply && ( // Only show reply button if allowed
         <CardFooter className="flex justify-end pt-0 pb-3 px-4">
           <Button variant="ghost" size="sm" onClick={() => setShowReplyInput(!showReplyInput)}>
             <MessageSquare className="mr-2 h-4 w-4" />
