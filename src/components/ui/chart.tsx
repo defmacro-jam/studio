@@ -1,9 +1,11 @@
+
 "use client"
 
 import * as React from "react"
 import * as RechartsPrimitive from "recharts"
 
 import { cn } from "@/lib/utils"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar" // Added Avatar import
 
 // Format: { THEME_NAME: CSS_SELECTOR }
 const THEMES = { light: "", dark: ".dark" } as const
@@ -12,6 +14,7 @@ export type ChartConfig = {
   [k in string]: {
     label?: React.ReactNode
     icon?: React.ComponentType
+    // Add voter details to config if needed, though passing via payload is more direct
   } & (
     | { color?: string; theme?: never }
     | { color?: never; theme: Record<keyof typeof THEMES, string> }
@@ -104,6 +107,7 @@ const ChartTooltip = RechartsPrimitive.Tooltip
 
 const ChartTooltipContent = React.forwardRef<
   HTMLDivElement,
+  // Extend props to potentially accept voter details if needed, but rely on payload primarily
   React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
     React.ComponentProps<"div"> & {
       hideLabel?: boolean
@@ -111,6 +115,8 @@ const ChartTooltipContent = React.forwardRef<
       indicator?: "line" | "dot" | "dashed"
       nameKey?: string
       labelKey?: string
+       // Add prop to control voter display, although logic is now internal
+      showVoters?: boolean
     }
 >(
   (
@@ -128,6 +134,7 @@ const ChartTooltipContent = React.forwardRef<
       color,
       nameKey,
       labelKey,
+      showVoters = true, // Default to true
     },
     ref
   ) => {
@@ -139,12 +146,8 @@ const ChartTooltipContent = React.forwardRef<
       }
 
       const [item] = payload
-      const key = `${labelKey || item.dataKey || item.name || "value"}`
-      const itemConfig = getPayloadConfigFromPayload(config, item, key)
-      const value =
-        !labelKey && typeof label === "string"
-          ? config[label as keyof typeof config]?.label || label
-          : itemConfig?.label
+      // Use the 'rating' field from the payload for the label
+      const value = item.payload.rating
 
       if (labelFormatter) {
         return (
@@ -160,13 +163,13 @@ const ChartTooltipContent = React.forwardRef<
 
       return <div className={cn("font-medium", labelClassName)}>{value}</div>
     }, [
-      label,
+      label, // Keep label prop for potential overrides
       labelFormatter,
       payload,
       hideLabel,
       labelClassName,
-      config,
-      labelKey,
+      // Removed config dependency as label comes from payload now
+      // Removed labelKey dependency
     ])
 
     if (!active || !payload?.length) {
@@ -174,6 +177,10 @@ const ChartTooltipContent = React.forwardRef<
     }
 
     const nestLabel = payload.length === 1 && indicator !== "dot"
+
+    // Extract voter details from the payload
+    const voters = payload[0]?.payload?.voters as { name: string, avatarUrl: string }[] | undefined;
+
 
     return (
       <div
@@ -235,11 +242,13 @@ const ChartTooltipContent = React.forwardRef<
                       <div className="grid gap-1.5">
                         {nestLabel ? tooltipLabel : null}
                         <span className="text-muted-foreground">
-                          {itemConfig?.label || item.name}
+                          {/* Use item name (count) or a default */}
+                          {itemConfig?.label || item.name || 'Votes'}
                         </span>
                       </div>
-                      {item.value && (
+                      {item.value !== undefined && ( // Check if value is defined
                         <span className="font-mono font-medium tabular-nums text-foreground">
+                          {/* Format value as number */}
                           {item.value.toLocaleString()}
                         </span>
                       )}
@@ -249,6 +258,24 @@ const ChartTooltipContent = React.forwardRef<
               </div>
             )
           })}
+
+            {/* Display Voter List */}
+             {showVoters && voters && voters.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-border/50">
+                    <p className="font-medium text-muted-foreground mb-1">Voted by:</p>
+                    <div className="flex flex-wrap gap-1">
+                        {voters.map((voter, idx) => (
+                             <div key={idx} className="flex items-center gap-1 text-xs bg-secondary/50 px-1.5 py-0.5 rounded">
+                                <Avatar className="h-4 w-4">
+                                    <AvatarImage src={voter.avatarUrl} alt={voter.name} data-ai-hint="avatar profile picture" />
+                                    <AvatarFallback>{voter.name.charAt(0).toUpperCase()}</AvatarFallback>
+                                </Avatar>
+                                <span>{voter.name}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+             )}
         </div>
       </div>
     )
@@ -350,6 +377,7 @@ function getPayloadConfigFromPayload(
     ] as string
   }
 
+  // Ensure configLabelKey exists in config before accessing
   return configLabelKey in config
     ? config[configLabelKey]
     : config[key as keyof typeof config]
@@ -363,3 +391,4 @@ export {
   ChartLegendContent,
   ChartStyle,
 }
+
