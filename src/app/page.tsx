@@ -1,23 +1,23 @@
+
 "use client";
 
 import { useState, useEffect, useMemo } from 'react';
 import type { RetroItem, PollResponse, User } from '@/lib/types';
 import { PollSection } from '@/components/retrospectify/PollSection';
-import { PollResultsSection } from '@/components/retrospectify/PollResultsSection'; // Import the new component
+import { PollResultsSection } from '@/components/retrospectify/PollResultsSection';
 import { RetroSection } from '@/components/retrospectify/RetroSection';
-// Import the wrapper function, not the flow directly
 import { categorizeJustification, type CategorizeJustificationOutput } from '@/ai/flows/categorize-justification';
 import { Toaster } from '@/components/ui/toaster';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Card, CardHeader, CardContent, CardFooter } from '@/components/ui/card'; // Import Card components for skeleton
+import { Card, CardHeader, CardContent, CardFooter } from '@/components/ui/card';
 
 // Mock current user - replace with actual auth later
 const mockCurrentUser: User = {
   id: 'user-123',
   name: 'Alex Doe',
-  avatarUrl: 'https://picsum.photos/id/1/100/100', // Placeholder avatar
+  avatarUrl: 'https://picsum.photos/id/1/100/100',
 };
 
 // Mock initial data - replace with API/DB calls later
@@ -32,7 +32,6 @@ const mockInitialItems: RetroItem[] = [
 ];
 
 const mockInitialPollResponses: PollResponse[] = [
-     // Example poll responses (can be empty initially)
      { id: 'p1', author: { id: 'user-456', name: 'Bob Smith', avatarUrl: 'https://picsum.photos/id/2/100/100' }, rating: 4, justification: 'Good progress overall, minor hiccup with API.', timestamp: new Date(Date.now() - 3600000 * 6) },
      { id: 'p2', author: { id: 'user-789', name: 'Charlie Brown', avatarUrl: 'https://picsum.photos/id/3/100/100' }, rating: 5, justification: "Loved the free cookies!", timestamp: new Date(Date.now() - 3600000 * 7) },
      { id: 'p3', author: { id: 'user-555', name: 'Dana Scully', avatarUrl: 'https://picsum.photos/id/4/100/100' }, rating: 2, justification: "Project X team was overly needy on the help channel.", timestamp: new Date(Date.now() - 3600000 * 8) },
@@ -41,68 +40,89 @@ const mockInitialPollResponses: PollResponse[] = [
 export default function RetroSpectifyPage() {
   const [retroItems, setRetroItems] = useState<RetroItem[]>(mockInitialItems);
   const [pollResponses, setPollResponses] = useState<PollResponse[]>(mockInitialPollResponses);
-  const [currentUser, setCurrentUser] = useState<User>(mockCurrentUser);
-  const [isLoading, setIsLoading] = useState(true); // Loading state
-  const [hasSubmitted, setHasSubmitted] = useState(false); // Track user submission state locally
+  const [currentUser] = useState<User>(mockCurrentUser);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [isEditingPoll, setIsEditingPoll] = useState(false); // State for poll editing mode
   const { toast } = useToast();
 
-   // Check initial submission status on mount
+  // Check initial submission status and find existing response on mount
   useEffect(() => {
+    let submittedLocally = false;
     if (typeof window !== 'undefined') {
-      const submittedLocally = localStorage.getItem(`pollSubmitted-${currentUser.id}`);
-      setHasSubmitted(!!submittedLocally);
+      submittedLocally = !!localStorage.getItem(`pollSubmitted-${currentUser.id}`);
     }
+    const userResponseExists = pollResponses.some(resp => resp.author.id === currentUser.id);
+    setHasSubmitted(submittedLocally || userResponseExists);
+
     // Simulate loading data
     const timer = setTimeout(() => {
-        // In a real app, fetch initialItems and pollResponses here
         setIsLoading(false);
-    }, 1500); // Simulate 1.5 second load time
+    }, 1500);
     return () => clearTimeout(timer);
-  }, [currentUser.id]);
+  }, [currentUser.id, pollResponses]); // Added pollResponses dependency
+
+  // Memoize the current user's response for editing
+  const currentUserResponse = useMemo(() => {
+    return pollResponses.find(resp => resp.author.id === currentUser.id);
+  }, [pollResponses, currentUser.id]);
+
 
   // Derived state to determine if the poll should be shown or results
   const shouldShowResults = useMemo(() => {
-    return hasSubmitted || pollResponses.some(resp => resp.author.id === currentUser.id);
-  }, [hasSubmitted, pollResponses, currentUser.id]);
+    return hasSubmitted && !isEditingPoll; // Show results only if submitted and not editing
+  }, [hasSubmitted, isEditingPoll]);
+
+  const shouldShowPollForm = useMemo(() => {
+      return !hasSubmitted || isEditingPoll; // Show form if not submitted OR editing
+  }, [hasSubmitted, isEditingPoll]);
+
+
+  // Function to remove existing AI-generated items for a specific poll response
+  const removeExistingPollItems = (responseId: string) => {
+      setRetroItems(prev => prev.filter(item => !(item.isFromPoll && item.pollResponseId === responseId)));
+  };
 
 
   const processJustification = async (rating: number, justification: string, responseId: string) => {
+       // Remove any previously generated items for this poll response BEFORE adding new ones
+       removeExistingPollItems(responseId);
+
       if (!justification.trim()) {
-          // If justification is empty, categorize based on rating directly
           const category = rating >= 4 ? 'well' : rating <= 2 ? 'improve' : 'discuss';
           const newItem: RetroItem = {
               id: `poll-${responseId}-rating`,
+              pollResponseId: responseId, // Link item to the poll response
               author: currentUser,
               content: `Rated ${rating} stars (No justification)`,
               timestamp: new Date(),
               category: category,
-              isFromPoll: true, // Mark as from poll
+              isFromPoll: true,
           };
           setRetroItems(prev => [...prev, newItem]);
           toast({
-              title: "Feedback Added",
+              title: isEditingPoll ? "Feedback Updated" : "Feedback Added",
               description: `Your rating was added to "${category === 'well' ? 'What Went Well' : category === 'improve' ? 'What Could Be Improved' : 'Discussion Topics'}".`,
           });
           return;
       }
 
       try {
-          // Use the exported wrapper function
           const categorizedSentences = await categorizeJustification({ rating, justification });
 
           if (categorizedSentences && categorizedSentences.length > 0) {
             const newItems: RetroItem[] = categorizedSentences.map((categorizedSentence, index) => ({
-                id: `poll-${responseId}-s${index}`, // Unique ID for each sentence item
+                id: `poll-${responseId}-s${index}`,
+                pollResponseId: responseId, // Link item to the poll response
                 author: currentUser,
                 content: categorizedSentence.sentence,
                 timestamp: new Date(),
-                category: categorizedSentence.category, // 'well' or 'improve'
-                isFromPoll: true, // Mark as from poll
+                category: categorizedSentence.category,
+                isFromPoll: true,
             }));
 
             setRetroItems(prev => [...prev, ...newItems]);
 
-            // Show a single toast summarizing the additions
             const wellCount = newItems.filter(item => item.category === 'well').length;
             const improveCount = newItems.filter(item => item.category === 'improve').length;
             let description = "Your feedback was processed.";
@@ -115,28 +135,25 @@ export default function RetroSpectifyPage() {
             }
 
              toast({
-                 title: "Feedback Categorized",
+                 title: isEditingPoll ? "Feedback Updated" : "Feedback Categorized",
                  description: description,
              });
           } else if (justification.trim()) {
-             // AI returned empty array, but justification was provided. Treat as discuss.
              const newItem: RetroItem = {
                id: `poll-${responseId}-discuss`,
+               pollResponseId: responseId, // Link item to the poll response
                author: currentUser,
                content: justification,
                timestamp: new Date(),
-               category: 'discuss', // Fallback to discuss if AI finds nothing to categorize
+               category: 'discuss',
                isFromPoll: true,
              };
              setRetroItems(prev => [...prev, newItem]);
              toast({
-               title: "Feedback Added",
+               title: isEditingPoll ? "Feedback Updated" : "Feedback Added",
                description: "Your feedback was added to 'Discussion Topics' for review.",
                variant: "default",
              });
-          } else {
-              // This case should technically be handled by the initial check, but included for safety
-             console.warn("Processing justification resulted in empty output despite non-empty input.");
           }
       } catch (error) {
           console.error("Error processing justification:", error);
@@ -145,9 +162,9 @@ export default function RetroSpectifyPage() {
             description: "Could not automatically categorize your feedback. Added to 'Discussion Topics'.",
             variant: "destructive",
           });
-          // Add the full justification to 'discuss' as a fallback
            const newItem: RetroItem = {
                id: `poll-${responseId}-error`,
+               pollResponseId: responseId, // Link item to the poll response
                author: currentUser,
                content: justification,
                timestamp: new Date(),
@@ -160,26 +177,60 @@ export default function RetroSpectifyPage() {
 
 
   const handlePollSubmit = (rating: number, justification: string) => {
-    // Prevent double submission visually and functionally
-    if (shouldShowResults) return;
+    let responseId: string;
+    let isUpdate = false;
 
-    const newResponse: PollResponse = {
-      id: `resp-${Date.now()}`, // Simple unique ID
-      author: currentUser,
-      rating,
-      justification,
-      timestamp: new Date(),
-    };
-    setPollResponses(prev => [...prev, newResponse]);
-    setHasSubmitted(true); // Update local submission state
+    if (isEditingPoll && currentUserResponse) {
+        // --- Update existing response ---
+        responseId = currentUserResponse.id;
+        isUpdate = true;
+        setPollResponses(prev =>
+            prev.map(resp =>
+                resp.id === responseId
+                    ? { ...resp, rating, justification, timestamp: new Date() }
+                    : resp
+            )
+        );
+         toast({
+             title: "Poll Response Updated",
+             description: "Your sentiment feedback has been updated.",
+         });
 
-     // Persist submission status locally in case of refresh
-    if (typeof window !== 'undefined') {
-        localStorage.setItem(`pollSubmitted-${currentUser.id}`, 'true');
+    } else {
+         // --- Add new response ---
+        responseId = `resp-${Date.now()}`;
+        const newResponse: PollResponse = {
+            id: responseId,
+            author: currentUser,
+            rating,
+            justification,
+            timestamp: new Date(),
+        };
+        setPollResponses(prev => [...prev, newResponse]);
+        setHasSubmitted(true); // Update local submission state
+
+        // Persist submission status locally
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(`pollSubmitted-${currentUser.id}`, 'true');
+        }
+         toast({
+             title: "Poll Response Submitted",
+             description: "Thank you for your feedback!",
+         });
     }
-    // Process the justification with AI after state update
-    processJustification(rating, justification, newResponse.id);
+
+    // Process justification (will also remove old items if updating)
+    processJustification(rating, justification, responseId);
+
+    setIsEditingPoll(false); // Exit editing mode after submit/update
   };
+
+  const handleEditPoll = () => {
+    if (currentUserResponse) {
+      setIsEditingPoll(true); // Enter editing mode
+    }
+  };
+
 
   const handleAddItem = (category: 'well' | 'improve' | 'discuss' | 'action') => (content: string) => {
     const newItem: RetroItem = {
@@ -188,7 +239,7 @@ export default function RetroSpectifyPage() {
       content,
       timestamp: new Date(),
       category,
-      isFromPoll: false, // Manually added item
+      isFromPoll: false,
     };
     setRetroItems(prev => [...prev, newItem]);
      toast({
@@ -205,8 +256,7 @@ export default function RetroSpectifyPage() {
           author: currentUser,
           content: replyContent,
           timestamp: new Date(),
-          isFromPoll: false, // Replies are not directly from poll
-          // Replies don't have categories themselves
+          isFromPoll: false,
         };
         return {
           ...item,
@@ -221,17 +271,26 @@ export default function RetroSpectifyPage() {
   };
 
    const handleDeleteItem = (itemId: string) => {
-    setRetroItems(prev => prev.filter(item => item.id !== itemId)); // Simplified delete
-    // Consider cascading deletes for replies or re-parenting if necessary
-     toast({
+     // Prevent deleting items generated from the current user's *uneditable* poll response
+     const itemToDelete = retroItems.find(item => item.id === itemId);
+     if (itemToDelete?.isFromPoll && itemToDelete.author.id === currentUser.id && !isEditingPoll) {
+         toast({
+            title: "Cannot Delete Poll Item",
+            description: "Edit your poll response to change items derived from it.",
+            variant: "destructive"
+         });
+         return;
+     }
+
+    setRetroItems(prev => prev.filter(item => item.id !== itemId));
+    toast({
         title: "Item Deleted",
         variant: "destructive"
-     });
+    });
    };
 
 
   const filterItems = (category: 'well' | 'improve' | 'discuss' | 'action') => {
-    // Filter out items that are actually replies nested within other items
     const topLevelItems = retroItems.filter(item => !retroItems.some(parent => parent.replies?.some(reply => reply.id === item.id)));
     return topLevelItems.filter(item => item.category === category).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
   };
@@ -255,7 +314,7 @@ export default function RetroSpectifyPage() {
                       <Skeleton className="h-20 w-full rounded" />
                     </CardContent>
                     <CardFooter className="border-t p-4">
-                         <Skeleton className="h-16 w-full rounded" />
+                         <Skeleton className="h-10 w-full rounded" /> {/* Adjusted skeleton height */}
                     </CardFooter>
                 </Card>
             ))}
@@ -282,14 +341,21 @@ export default function RetroSpectifyPage() {
 
       {/* Poll Section or Results Section */}
       <div className="mb-6 md:mb-8">
-        {shouldShowResults ? (
-            <PollResultsSection responses={pollResponses} />
-        ) : (
-            <PollSection
+        {shouldShowPollForm && (
+             <PollSection
                 currentUser={currentUser}
                 onSubmitPoll={handlePollSubmit}
+                initialRating={isEditingPoll ? currentUserResponse?.rating : undefined}
+                initialJustification={isEditingPoll ? currentUserResponse?.justification : undefined}
+                isEditing={isEditingPoll}
             />
         )}
+         {shouldShowResults && (
+            <PollResultsSection
+                responses={pollResponses}
+                onEdit={currentUserResponse ? handleEditPoll : undefined} // Pass edit handler only if user has response
+            />
+         )}
       </div>
 
       {/* Retro Board Sections */}
@@ -298,21 +364,21 @@ export default function RetroSpectifyPage() {
           title="What Went Well"
           items={filterItems('well')}
           currentUser={currentUser}
-          onAddItem={handleAddItem('well')} // Allow adding 'well' items
+          onAddItem={handleAddItem('well')}
           onAddReply={handleAddReply}
-          onDeleteItem={handleDeleteItem} // Allow deleting poll-generated items
-          allowAddingItems={true} // Enable adding
-          className="bg-teal-50/50 border-teal-200"
+          onDeleteItem={handleDeleteItem}
+          allowAddingItems={true}
+          className="bg-teal-50/50 border-teal-200 dark:bg-teal-900/20 dark:border-teal-700/50"
         />
         <RetroSection
           title="What Could Be Improved"
           items={filterItems('improve')}
           currentUser={currentUser}
-          onAddItem={handleAddItem('improve')} // Allow adding 'improve' items
+          onAddItem={handleAddItem('improve')}
           onAddReply={handleAddReply}
-           onDeleteItem={handleDeleteItem} // Allow deleting poll-generated items
-          allowAddingItems={true} // Enable adding
-          className="bg-amber-50/50 border-amber-200"
+           onDeleteItem={handleDeleteItem}
+          allowAddingItems={true}
+          className="bg-amber-50/50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-700/50"
         />
         <RetroSection
           title="Discussion Topics"
@@ -322,7 +388,7 @@ export default function RetroSpectifyPage() {
           onAddReply={handleAddReply}
           onDeleteItem={handleDeleteItem}
           allowAddingItems={true}
-          className="bg-blue-50/50 border-blue-200"
+           className="bg-blue-50/50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-700/50"
         />
         <RetroSection
           title="Action Items"
@@ -332,7 +398,7 @@ export default function RetroSpectifyPage() {
           onAddReply={handleAddReply}
           onDeleteItem={handleDeleteItem}
           allowAddingItems={true}
-          className="bg-purple-50/50 border-purple-200"
+           className="bg-purple-50/50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-700/50"
         />
       </div>
        <Toaster />
