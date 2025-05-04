@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { RetroItem, PollResponse, User } from '@/lib/types';
 import { PollSection } from '@/components/retrospectify/PollSection';
+import { PollResultsSection } from '@/components/retrospectify/PollResultsSection'; // Import the new component
 import { RetroSection } from '@/components/retrospectify/RetroSection';
 // Import the wrapper function, not the flow directly
 import { categorizeJustification, type CategorizeJustificationOutput } from '@/ai/flows/categorize-justification';
@@ -32,7 +33,8 @@ const mockInitialItems: RetroItem[] = [
 
 const mockInitialPollResponses: PollResponse[] = [
      // Example poll responses (can be empty initially)
-    // { id: 'p1', author: { id: 'user-456', name: 'Bob Smith', avatarUrl: '/avatars/bob.png' }, rating: 4, justification: 'Good progress overall, minor hiccup with API.', timestamp: new Date(Date.now() - 3600000 * 6) },
+     { id: 'p1', author: { id: 'user-456', name: 'Bob Smith', avatarUrl: '/avatars/bob.png' }, rating: 4, justification: 'Good progress overall, minor hiccup with API.', timestamp: new Date(Date.now() - 3600000 * 6) },
+     { id: 'p2', author: { id: 'user-789', name: 'Charlie Brown', avatarUrl: 'https://picsum.photos/id/3/100/100' }, rating: 5, justification: "Loved the free cookies!", timestamp: new Date(Date.now() - 3600000 * 7) },
 ];
 
 export default function RetroSpectifyPage() {
@@ -47,15 +49,15 @@ export default function RetroSpectifyPage() {
     // Replace with actual data fetching
     const timer = setTimeout(() => {
         // In a real app, fetch initialItems and pollResponses here
-        // Process initial poll responses (if any) - Simplified, no AI on load
-        // processInitialPollResponses(mockInitialPollResponses);
         setIsLoading(false);
     }, 1500); // Simulate 1.5 second load time
     return () => clearTimeout(timer);
   }, []); // Added empty dependency array
 
   const hasUserSubmittedPoll = useMemo(() => {
-    return pollResponses.some(resp => resp.author.id === currentUser.id);
+    // Also check local storage in case of refresh after submission but before state persistence (if using server state)
+     const submittedLocally = typeof window !== 'undefined' && localStorage.getItem(`pollSubmitted-${currentUser.id}`);
+    return pollResponses.some(resp => resp.author.id === currentUser.id) || !!submittedLocally;
   }, [pollResponses, currentUser.id]);
 
   const processJustification = async (rating: number, justification: string, responseId: string) => {
@@ -150,29 +152,6 @@ export default function RetroSpectifyPage() {
       }
   };
 
-  // Process existing poll responses on load - REMOVED AI CALL ON LOAD
-  // const processInitialPollResponses = (responses: PollResponse[]) => {
-  //     responses.forEach(resp => {
-  //         // Check if an item for this poll response already exists
-  //         if (!retroItems.some(item => item.id && item.id.startsWith(`poll-${resp.id}`))) {
-  //             const author = resp.author;
-  //             if (author) {
-  //                 // Simplified logic for initial load: Put full justification into category based on rating
-  //                  const category = resp.rating >= 4 ? 'well' : resp.rating <= 2 ? 'improve' : 'discuss';
-  //                  const newItem: RetroItem = {
-  //                       id: `poll-${resp.id}-initial`, // Use a distinct initial ID pattern
-  //                       author: author,
-  //                       content: resp.justification || `Rated ${resp.rating} stars (No justification)`,
-  //                       timestamp: resp.timestamp,
-  //                       category: category,
-  //                       isFromPoll: true,
-  //                  };
-  //                  setRetroItems(prev => [...prev, newItem]);
-  //             }
-  //         }
-  //     });
-  // };
-
 
   const handlePollSubmit = (rating: number, justification: string) => {
     if (hasUserSubmittedPoll) return; // Prevent double submission
@@ -185,6 +164,10 @@ export default function RetroSpectifyPage() {
       timestamp: new Date(),
     };
     setPollResponses(prev => [...prev, newResponse]);
+     // Persist submission status locally in case of refresh
+    if (typeof window !== 'undefined') {
+        localStorage.setItem(`pollSubmitted-${currentUser.id}`, 'true');
+    }
     // Process the justification with AI after state update
     processJustification(rating, justification, newResponse.id);
   };
@@ -288,13 +271,16 @@ export default function RetroSpectifyPage() {
         </header>
 
 
-      {/* Poll Section spanning full width initially */}
+      {/* Poll Section or Results Section */}
       <div className="mb-6 md:mb-8">
-        <PollSection
-          currentUser={currentUser}
-          onSubmitPoll={handlePollSubmit}
-          hasSubmitted={hasUserSubmittedPoll}
-        />
+        {hasUserSubmittedPoll ? (
+            <PollResultsSection responses={pollResponses} />
+        ) : (
+            <PollSection
+                currentUser={currentUser}
+                onSubmitPoll={handlePollSubmit}
+            />
+        )}
       </div>
 
       {/* Retro Board Sections */}

@@ -13,10 +13,10 @@ import { Send } from 'lucide-react';
 interface PollSectionProps {
   currentUser: User;
   onSubmitPoll: (rating: number, justification: string) => void;
-  hasSubmitted: boolean;
+  // hasSubmitted prop is removed
 }
 
-export function PollSection({ currentUser, onSubmitPoll, hasSubmitted }: PollSectionProps) {
+export function PollSection({ currentUser, onSubmitPoll }: PollSectionProps) {
   const [rating, setRating] = useState(0);
   const [justification, setJustification] = useState('');
 
@@ -24,9 +24,7 @@ export function PollSection({ currentUser, onSubmitPoll, hasSubmitted }: PollSec
     e.preventDefault();
     if (rating > 0) {
       onSubmitPoll(rating, justification);
-      // Optionally reset after submission, or rely on parent state change
-      // setRating(0);
-      // setJustification('');
+      // No need to reset here, parent will swap component
     }
   };
 
@@ -36,41 +34,36 @@ export function PollSection({ currentUser, onSubmitPoll, hasSubmitted }: PollSec
         <CardTitle className="text-lg font-semibold">Weekly Sentiment Poll</CardTitle>
         <CardDescription>How did the past week go for you?</CardDescription>
       </CardHeader>
-      {hasSubmitted ? (
-         <CardContent>
-            <p className="text-center text-muted-foreground py-4">Thanks for submitting your feedback!</p>
-         </CardContent>
-      ) : (
-        <form onSubmit={handleSubmit}>
-            <CardContent className="space-y-4">
-            <div className="flex items-center space-x-3 mb-4">
-                <Avatar className="h-10 w-10">
-                    <AvatarImage src={currentUser.avatarUrl} alt={currentUser.name} data-ai-hint="avatar profile picture"/>
-                    <AvatarFallback>{currentUser.name.charAt(0).toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <p className="font-medium">{currentUser.name}</p>
-            </div>
-            <div className="space-y-2">
-                <Label htmlFor="rating">Your Rating (1-5 stars)</Label>
-                <StarRating value={rating} onChange={setRating} />
-            </div>
-            <div className="space-y-2">
-                <Label htmlFor="justification">Justification (Optional)</Label>
-                <Textarea
-                id="justification"
-                placeholder="Explain your rating... What went well? What could be improved?"
-                value={justification}
-                onChange={(e) => setJustification(e.target.value)}
-                />
-            </div>
-            </CardContent>
-            <CardFooter className="flex justify-end">
-            <Button type="submit" disabled={rating === 0}>
-                <Send className="mr-2 h-4 w-4" /> Submit Feedback
-            </Button>
-            </CardFooter>
-        </form>
-      )}
+      {/* Conditional rendering based on hasSubmitted is removed */}
+      <form onSubmit={handleSubmit}>
+          <CardContent className="space-y-4">
+          <div className="flex items-center space-x-3 mb-4">
+              <Avatar className="h-10 w-10">
+                  <AvatarImage src={currentUser.avatarUrl} alt={currentUser.name} data-ai-hint="avatar profile picture"/>
+                  <AvatarFallback>{currentUser.name.charAt(0).toUpperCase()}</AvatarFallback>
+              </Avatar>
+              <p className="font-medium">{currentUser.name}</p>
+          </div>
+          <div className="space-y-2">
+              <Label htmlFor="rating">Your Rating (1-5 stars)</Label>
+              <StarRating value={rating} onChange={setRating} />
+          </div>
+          <div className="space-y-2">
+              <Label htmlFor="justification">Justification (Optional)</Label>
+              <Textarea
+              id="justification"
+              placeholder="Explain your rating... What went well? What could be improved?"
+              value={justification}
+              onChange={(e) => setJustification(e.target.value)}
+              />
+          </div>
+          </CardContent>
+          <CardFooter className="flex justify-end">
+          <Button type="submit" disabled={rating === 0}>
+              <Send className="mr-2 h-4 w-4" /> Submit Feedback
+          </Button>
+          </CardFooter>
+      </form>
     </Card>
   );
 }
