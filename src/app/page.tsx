@@ -315,30 +315,47 @@ export default function RetroSpectifyPage() {
    const handleDragStart = useCallback((e: DragEvent<HTMLDivElement>) => {
       const itemId = e.currentTarget.getAttribute('data-item-id'); // Assuming card has data-item-id
       if (itemId) {
-          setDraggingItemId(itemId);
-          e.dataTransfer.setData('text/plain', itemId); // Keep this for compatibility
-          e.dataTransfer.effectAllowed = "move";
+          // Check if the item belongs to the current user
+          const item = retroItems.find(i => i.id === itemId);
+          if (item && item.author.id === currentUser.id) {
+             setDraggingItemId(itemId);
+             e.dataTransfer.setData('text/plain', itemId); // Keep this for compatibility
+             e.dataTransfer.effectAllowed = "move";
+          } else {
+              e.preventDefault(); // Prevent dragging if not the owner
+          }
       }
-   }, []);
+   }, [currentUser.id, retroItems]); // Ensure retroItems is a dependency
 
    const handleDragEnd = useCallback(() => {
       setDraggingItemId(null);
    }, []);
 
     const handleMoveItem = useCallback((itemId: string, targetCategory: Category) => {
-      setRetroItems(prev =>
-        prev.map(item =>
-          item.id === itemId && item.category !== targetCategory && !item.isFromPoll
-            ? { ...item, category: targetCategory, timestamp: new Date() } // Update category and timestamp
-            : item
-        )
-      );
-      toast({
-          title: "Item Moved",
-          description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'action' ? 'Action Items' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`
-      });
-      setDraggingItemId(null); // Clear dragging state after successful move
-    }, [toast]); // Include dependencies
+        const itemToMove = retroItems.find(item => item.id === itemId);
+
+        // Only allow moving if the item exists, belongs to the current user, and is changing category
+        if (itemToMove && itemToMove.author.id === currentUser.id && itemToMove.category !== targetCategory) {
+            setRetroItems(prev =>
+                prev.map(item =>
+                    item.id === itemId
+                        ? { ...item, category: targetCategory, timestamp: new Date() } // Update category and timestamp
+                        : item
+                )
+            );
+            toast({
+                title: "Item Moved",
+                description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'action' ? 'Action Items' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`
+            });
+        } else if (itemToMove && itemToMove.author.id !== currentUser.id) {
+             toast({
+                title: "Cannot Move Item",
+                description: "You can only move your own items.",
+                variant: "destructive"
+            });
+        }
+        setDraggingItemId(null); // Clear dragging state after attempt
+    }, [currentUser.id, retroItems, toast]); // Ensure retroItems and currentUser.id are dependencies
 
 
   const filterItems = (category: Category) => {
@@ -379,8 +396,9 @@ export default function RetroSpectifyPage() {
   return (
     <div
         className="container mx-auto p-4 md:p-8 max-w-screen-2xl"
-        onDragStart={handleDragStart} // Attach drag start globally (or use event delegation)
-        onDragEnd={handleDragEnd}     // Attach drag end globally
+        // Drag handlers removed from global div, handled by RetroItemCard and RetroSection
+        // onDragStart={handleDragStart}
+        // onDragEnd={handleDragEnd}
     >
         <header className="mb-8 flex justify-between items-center">
             <h1 className="text-3xl font-bold text-primary">RetroSpectify</h1>
@@ -472,3 +490,4 @@ export default function RetroSpectifyPage() {
     </div>
   );
 }
+

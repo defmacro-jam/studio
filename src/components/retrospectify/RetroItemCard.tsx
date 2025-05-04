@@ -36,8 +36,8 @@ export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem, isD
 
   const allowReply = !item.isFromPoll; // Do not allow replies on items generated from poll justifications
 
-  // Only allow the current user to drag their own items that are NOT from a poll
-  const isDraggable = !item.isFromPoll && item.author.id === currentUser.id;
+  // Allow the current user to drag their own items.
+  const isDraggable = item.author.id === currentUser.id;
 
   const handleDragStart = (e: DragEvent<HTMLDivElement>) => {
      if (!isDraggable) {
@@ -93,6 +93,9 @@ export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem, isD
       </CardHeader>
       <CardContent className="pb-3 pt-0 px-4">
         <p className="text-sm">{item.content}</p>
+         {item.isFromPoll && (
+           <p className="text-xs text-muted-foreground/70 italic mt-1">(From sentiment poll)</p>
+         )}
       </CardContent>
       {allowReply && ( // Only show reply button if allowed (not from poll)
         <CardFooter className="flex justify-end pt-0 pb-3 px-4">
