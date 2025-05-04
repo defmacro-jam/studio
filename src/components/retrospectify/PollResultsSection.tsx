@@ -5,9 +5,15 @@ import { useMemo } from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartConfig } from "@/components/ui/chart";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis, LabelList } from "recharts";
-import type { PollResponse, User } from "@/lib/types"; // Import User type
+import type { PollResponse } from "@/lib/types"; // Import User type removed as it's implicitly handled via PollResponse
 import { Button } from "@/components/ui/button";
-import { Edit } from "lucide-react";
+import { Edit, ChevronDown } from "lucide-react"; // Import ChevronDown for accordion indicator
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"; // Import Accordion components
 
 interface PollResultsSectionProps {
   responses: PollResponse[];
@@ -69,88 +75,102 @@ export function PollResultsSection({ responses, onEdit }: PollResultsSectionProp
     }, [responses, totalResponses]);
 
     return (
-        <Card className="shadow-lg border-border/80 rounded-lg bg-card">
-            <CardHeader className="pb-2 flex flex-row justify-between items-start">
-                 <div>
-                    <CardTitle className="text-xl font-bold text-primary">Weekly Sentiment</CardTitle>
-                    <CardDescription className="text-sm">
-                        {totalResponses > 0
-                            ? `Avg: ${averageRating.toFixed(1)} ★ (${totalResponses} vote${totalResponses !== 1 ? 's' : ''})`
-                            : `No responses yet.`
-                        }
-                    </CardDescription>
-                 </div>
-                 {/* Add Edit Button if onEdit is provided */}
-                {onEdit && (
-                    <Button variant="outline" size="sm" onClick={onEdit}>
-                        <Edit className="mr-2 h-4 w-4" />
-                        Edit Vote
-                    </Button>
-                )}
-            </CardHeader>
-            <CardContent className="py-2">
-                 {totalResponses > 0 ? (
-                    <ChartContainer config={chartConfig} className="h-[180px] w-full"> {/* Maintain height */}
-                         <BarChart
-                            data={chartData}
-                            layout="horizontal" // Changed layout to horizontal (default)
-                            margin={{
-                                top: 5,
-                                right: 10, // Reduced right margin
-                                left: 5, // Adjusted left margin
-                                bottom: 5, // Adjusted bottom margin
-                            }}
-                            barCategoryGap="20%" // Adjusted gap
-                         >
-                             <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
-                             {/* XAxis is now the categorical rating axis */}
-                              <XAxis
-                                dataKey="rating"
-                                type="category"
-                                tickLine={false}
-                                axisLine={false}
-                                tickMargin={5}
-                                // width={40} // Removed fixed width
-                                stroke="hsl(var(--muted-foreground))"
-                                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
-                             />
-                             {/* YAxis is now the numerical count axis */}
-                             <YAxis
-                                type="number"
-                                dataKey="count"
-                                axisLine={false}
-                                tickLine={false}
-                                tickMargin={5}
-                                allowDecimals={false}
-                                stroke="hsl(var(--muted-foreground))"
-                                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
-                                domain={[0, 'dataMax + 1']} // Ensure space for labels
-                             />
-                             <ChartTooltip
-                                cursor={{ fill: 'hsl(var(--accent) / 0.1)' }}
-                                content={<ChartTooltipContent indicator="dot" labelClassName="font-medium" showVoters={true} />} // Enable voter display
-                             />
-                            {/* Bar orientation adjusted (radius, barSize) */}
-                            <Bar dataKey="count" radius={[4, 4, 0, 0]} barSize={30}> {/* Adjusted radius and barSize */}
-                                {/* LabelList position changed to top */}
-                                <LabelList
-                                    dataKey="count"
-                                    position="top" // Position labels above the bars
-                                    offset={8}
-                                    className="fill-foreground font-medium"
-                                    fontSize={11} // Slightly smaller font size
-                                    formatter={(value: number) => (value > 0 ? value : '')}
-                                />
-                            </Bar>
-                         </BarChart>
-                    </ChartContainer>
-                 ) : (
-                    <div className="h-[180px] flex items-center justify-center">
-                        <p className="text-center text-sm text-muted-foreground py-4">Waiting for votes...</p>
-                    </div>
-                 )}
-            </CardContent>
-            {/* Remove CardFooter unless needed for other actions */}
-        </Card>
+         // Wrap the Card with Accordion
+        <Accordion type="single" collapsible className="w-full">
+            <AccordionItem value="poll-results" className="border-b-0"> {/* Remove bottom border from item */}
+                 <Card className="shadow-lg border-border/80 rounded-lg bg-card">
+                     {/* AccordionTrigger wraps the header content */}
+                     <AccordionTrigger className="p-0 hover:no-underline">
+                         {/* Use CardHeader for padding and structure */}
+                         <CardHeader className="pb-4 pt-4 px-6 flex flex-row justify-between items-center w-full">
+                             <div className="flex items-center space-x-4"> {/* Group title/desc with chevron */}
+                                 <div>
+                                    <CardTitle className="text-xl font-bold text-primary">Weekly Sentiment</CardTitle>
+                                    <CardDescription className="text-sm">
+                                        {totalResponses > 0
+                                            ? `Avg: ${averageRating.toFixed(1)} ★ (${totalResponses} vote${totalResponses !== 1 ? 's' : ''})`
+                                            : `No responses yet.`
+                                        }
+                                    </CardDescription>
+                                 </div>
+                                 {/* Chevron is automatically added by AccordionTrigger, remove manual one if present */}
+                                 {/* <ChevronDown className="h-4 w-4 shrink-0 transition-transform duration-200 text-muted-foreground group-data-[state=open]:rotate-180" /> */}
+                             </div>
+                             {/* Edit Button */}
+                            {onEdit && (
+                                <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(); }} className="mr-4"> {/* Prevent trigger click */}
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Edit Vote
+                                </Button>
+                            )}
+                         </CardHeader>
+                     </AccordionTrigger>
+                     {/* AccordionContent wraps the chart */}
+                     <AccordionContent className="pt-0"> {/* Remove top padding */}
+                         <CardContent className="py-2 px-6"> {/* Maintain padding */}
+                             {totalResponses > 0 ? (
+                                <ChartContainer config={chartConfig} className="h-[180px] w-full"> {/* Maintain height */}
+                                     <BarChart
+                                        data={chartData}
+                                        layout="horizontal" // Changed layout to horizontal (default)
+                                        margin={{
+                                            top: 5,
+                                            right: 10, // Reduced right margin
+                                            left: 5, // Adjusted left margin
+                                            bottom: 5, // Adjusted bottom margin
+                                        }}
+                                        barCategoryGap="20%" // Adjusted gap
+                                     >
+                                         <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
+                                         {/* XAxis is now the categorical rating axis */}
+                                          <XAxis
+                                            dataKey="rating"
+                                            type="category"
+                                            tickLine={false}
+                                            axisLine={false}
+                                            tickMargin={5}
+                                            stroke="hsl(var(--muted-foreground))"
+                                            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
+                                         />
+                                         {/* YAxis is now the numerical count axis */}
+                                         <YAxis
+                                            type="number"
+                                            dataKey="count"
+                                            axisLine={false}
+                                            tickLine={false}
+                                            tickMargin={5}
+                                            allowDecimals={false}
+                                            stroke="hsl(var(--muted-foreground))"
+                                            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
+                                            domain={[0, 'dataMax + 1']} // Ensure space for labels
+                                         />
+                                         <ChartTooltip
+                                            cursor={{ fill: 'hsl(var(--accent) / 0.1)' }}
+                                            content={<ChartTooltipContent indicator="dot" labelClassName="font-medium" showVoters={true} />} // Enable voter display
+                                         />
+                                        {/* Bar orientation adjusted (radius, barSize) */}
+                                        <Bar dataKey="count" radius={[4, 4, 0, 0]} barSize={30}> {/* Adjusted radius and barSize */}
+                                            {/* LabelList position changed to top */}
+                                            <LabelList
+                                                dataKey="count"
+                                                position="top" // Position labels above the bars
+                                                offset={8}
+                                                className="fill-foreground font-medium"
+                                                fontSize={11} // Slightly smaller font size
+                                                formatter={(value: number) => (value > 0 ? value : '')}
+                                            />
+                                        </Bar>
+                                     </BarChart>
+                                </ChartContainer>
+                             ) : (
+                                <div className="h-[180px] flex items-center justify-center">
+                                    <p className="text-center text-sm text-muted-foreground py-4">Waiting for votes...</p>
+                                </div>
+                             )}
+                         </CardContent>
+                     </AccordionContent>
+                 </Card>
+            </AccordionItem>
+        </Accordion>
     );
 }

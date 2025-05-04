@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -28,13 +29,14 @@ const AccordionTrigger = React.forwardRef<
     <AccordionPrimitive.Trigger
       ref={ref}
       className={cn(
-        "flex flex-1 items-center justify-between py-4 font-medium transition-all hover:underline [&[data-state=open]>svg]:rotate-180",
+        "group flex flex-1 items-center justify-between font-medium transition-all [&[data-state=open]>svg]:rotate-180", // Removed default py-4 padding and hover:underline
         className
       )}
       {...props}
     >
       {children}
-      <ChevronDown className="h-4 w-4 shrink-0 transition-transform duration-200" />
+      {/* Conditionally render chevron only if children don't already include one? Or adjust styling */}
+      <ChevronDown className="h-4 w-4 shrink-0 transition-transform duration-200 text-muted-foreground group-hover:text-foreground mr-4" /> {/* Adjusted margin and color */}
     </AccordionPrimitive.Trigger>
   </AccordionPrimitive.Header>
 ))
@@ -49,7 +51,7 @@ const AccordionContent = React.forwardRef<
     className="overflow-hidden text-sm transition-all data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down"
     {...props}
   >
-    <div className={cn("pb-4 pt-0", className)}>{children}</div>
+    <div className={cn("pb-4 pt-0", className)}>{children}</div> {/* Default pt-0 */}
   </AccordionPrimitive.Content>
 ))
 
