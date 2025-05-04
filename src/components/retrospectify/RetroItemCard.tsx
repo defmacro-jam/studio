@@ -30,9 +30,14 @@ export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem, isD
     }
   };
 
-  const canDelete = onDeleteItem && item.author.id === currentUser.id && !item.isFromPoll;
+  // User can delete their own items, except those generated from their non-editable poll response
+  // (The page component handles the editability check before calling onDeleteItem)
+  const canDelete = onDeleteItem && item.author.id === currentUser.id;
+
   const allowReply = !item.isFromPoll; // Do not allow replies on items generated from poll justifications
-  const isDraggable = !item.isFromPoll; // Only allow non-poll items to be dragged
+
+  // Only allow the current user to drag their own items that are NOT from a poll
+  const isDraggable = !item.isFromPoll && item.author.id === currentUser.id;
 
   const handleDragStart = (e: DragEvent<HTMLDivElement>) => {
      if (!isDraggable) {
@@ -58,11 +63,13 @@ export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem, isD
        className={cn(
          "mb-4 shadow-sm",
          isDraggable && "cursor-grab", // Add grab cursor for draggable items
+         !isDraggable && "cursor-default", // Explicitly default cursor if not draggable
          isDragging && "opacity-50 ring-2 ring-primary ring-offset-2" // Style when being dragged
        )}
-       draggable={isDraggable}
+       draggable={isDraggable} // Only make draggable if allowed
        onDragStart={handleDragStart}
        onDragEnd={handleDragEnd} // Optional: for cleanup
+       data-item-id={item.id} // Ensure item ID is available for page-level drag handlers if needed
     >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
         <div className="flex items-center space-x-3">
