@@ -63,10 +63,10 @@ export function PollResultsSection({ responses, onEdit }: PollResultsSectionProp
         <Card className="shadow-lg border-border/80 rounded-lg bg-card">
             <CardHeader className="pb-2 flex flex-row justify-between items-start">
                  <div>
-                    <CardTitle className="text-xl font-bold text-primary">Weekly Sentiment Snapshot</CardTitle>
+                    <CardTitle className="text-xl font-bold text-primary">Weekly Sentiment</CardTitle>
                     <CardDescription className="text-sm">
                         {totalResponses > 0
-                            ? `Average Rating: ${averageRating.toFixed(1)} ★ (from ${totalResponses} response${totalResponses !== 1 ? 's' : ''})`
+                            ? `Avg: ${averageRating.toFixed(1)} ★ (${totalResponses} vote${totalResponses !== 1 ? 's' : ''})`
                             : `No responses yet.`
                         }
                     </CardDescription>
@@ -75,64 +75,69 @@ export function PollResultsSection({ responses, onEdit }: PollResultsSectionProp
                 {onEdit && (
                     <Button variant="outline" size="sm" onClick={onEdit}>
                         <Edit className="mr-2 h-4 w-4" />
-                        Edit Your Response
+                        Edit Vote
                     </Button>
                 )}
             </CardHeader>
-            <CardContent>
+            <CardContent className="py-2">
                  {totalResponses > 0 ? (
-                    <ChartContainer config={chartConfig} className="h-[250px] w-full">
+                    <ChartContainer config={chartConfig} className="h-[180px] w-full"> {/* Reduced height */}
                          <BarChart
                             data={chartData}
-                            layout="vertical"
+                            layout="vertical" // Changed layout to vertical
                             margin={{
-                                top: 10,
-                                right: 40, // Increased right margin for labels
-                                left: 10,
-                                bottom: 10,
+                                top: 5,
+                                right: 30, // Increased right margin for labels if needed
+                                left: 5, // Adjusted left margin
+                                bottom: 5, // Adjusted bottom margin
                             }}
-                            barCategoryGap="20%"
+                            barCategoryGap="25%" // Adjusted gap between bars
                          >
                             <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
+                             {/* XAxis is now the numerical count axis */}
                              <XAxis
                                 type="number"
                                 dataKey="count"
                                 axisLine={false}
                                 tickLine={false}
-                                tickMargin={10}
+                                tickMargin={5}
                                 allowDecimals={false}
-                                stroke="hsl(var(--muted-foreground))" // Axis stroke color
-                                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} // Tick label style
+                                stroke="hsl(var(--muted-foreground))"
+                                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
+                                domain={[0, 'dataMax + 1']} // Ensure space for labels
                              />
+                             {/* YAxis is now the categorical rating axis */}
                              <YAxis
                                 dataKey="rating"
                                 type="category"
                                 tickLine={false}
                                 axisLine={false}
-                                tickMargin={10}
-                                width={60}
-                                stroke="hsl(var(--muted-foreground))" // Axis stroke color
-                                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} // Tick label style
+                                tickMargin={5}
+                                width={40} // Adjusted width for rating labels
+                                stroke="hsl(var(--muted-foreground))"
+                                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
                              />
                              <ChartTooltip
-                                cursor={{ fill: 'hsl(var(--accent) / 0.1)' }} // Lighter hover effect
-                                content={<ChartTooltipContent indicator="dot" labelClassName="font-medium" />} // Use dot indicator
+                                cursor={{ fill: 'hsl(var(--accent) / 0.1)' }}
+                                content={<ChartTooltipContent indicator="dot" labelClassName="font-medium" />}
                              />
-                            <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={25}>
+                            {/* Bar orientation adjusted (radius, barSize) */}
+                            <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={20}>
+                                {/* LabelList position changed to right */}
                                 <LabelList
                                     dataKey="count"
-                                    position="right" // Position labels to the right
+                                    position="right" // Position labels to the right of the bars
                                     offset={8}
                                     className="fill-foreground font-medium"
-                                    fontSize={12}
-                                    formatter={(value: number) => (value > 0 ? value : '')} // Only show label if count > 0
+                                    fontSize={11} // Slightly smaller font size
+                                    formatter={(value: number) => (value > 0 ? value : '')}
                                 />
                             </Bar>
                          </BarChart>
                     </ChartContainer>
                  ) : (
-                    <div className="h-[250px] flex items-center justify-center">
-                        <p className="text-center text-muted-foreground py-4">Waiting for poll responses...</p>
+                    <div className="h-[180px] flex items-center justify-center"> {/* Reduced height */}
+                        <p className="text-center text-sm text-muted-foreground py-4">Waiting for votes...</p>
                     </div>
                  )}
             </CardContent>
