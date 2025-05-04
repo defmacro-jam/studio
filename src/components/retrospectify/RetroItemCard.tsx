@@ -14,8 +14,8 @@ interface RetroItemCardProps {
   currentUser: User;
   onAddReply: (itemId: string, replyContent: string) => void;
   onDeleteItem?: (itemId: string) => void; // Optional delete handler
-  onDragStartItem: (itemId: string) => void; // Callback for drag start
-  onDragEndItem: () => void; // Callback for drag end
+  onDragStartItem: (itemId: string) => void; // Callback for drag start - REQUIRED
+  onDragEndItem: () => void; // Callback for drag end - REQUIRED
   isDragging?: boolean; // Optional prop to style when dragging
 }
 
@@ -24,8 +24,8 @@ export function RetroItemCard({
     currentUser,
     onAddReply,
     onDeleteItem,
-    onDragStartItem,
-    onDragEndItem,
+    onDragStartItem, // Ensure prop is destructured
+    onDragEndItem,   // Ensure prop is destructured
     isDragging
 }: RetroItemCardProps) {
   const [showReplyInput, setShowReplyInput] = useState(false);
@@ -46,7 +46,7 @@ export function RetroItemCard({
 
   // Allow replies on items from polls, discussion, and action items.
   // Disallow replies ONLY on manually added 'well' or 'improve' items.
-  const allowReply = !( !item.isFromPoll && (item.category === 'well' || item.category === 'improve') );
+  const allowReply = !(!item.isFromPoll && (item.category === 'well' || item.category === 'improve'));
 
   // Allow the current user to drag their own items.
   const isDraggable = item.author.id === currentUser.id;
@@ -59,14 +59,24 @@ export function RetroItemCard({
     e.dataTransfer.setData('text/plain', item.id); // Send item ID
     e.dataTransfer.setData('application/json', JSON.stringify({ id: item.id, originalCategory: item.category })); // Send ID and original category
     e.dataTransfer.effectAllowed = "move";
-     onDragStartItem(item.id); // Notify parent component
+    // Ensure onDragStartItem is called only if it's a valid function
+    if (typeof onDragStartItem === 'function') {
+      onDragStartItem(item.id); // Notify parent component
+    } else {
+      console.error("onDragStartItem is not a function", onDragStartItem); // Add logging for debugging
+    }
      // Optional: Add a class to visually indicate dragging
      // e.currentTarget.classList.add('opacity-50');
   };
 
    const handleDragEnd = (e: DragEvent<HTMLDivElement>) => {
       if (!isDraggable) return;
-      onDragEndItem(); // Notify parent component
+      // Ensure onDragEndItem is called only if it's a valid function
+      if (typeof onDragEndItem === 'function') {
+        onDragEndItem(); // Notify parent component
+      } else {
+        console.error("onDragEndItem is not a function", onDragEndItem); // Add logging for debugging
+      }
       // Optional: Remove dragging class
      // e.currentTarget.classList.remove('opacity-50');
    };
@@ -82,7 +92,7 @@ export function RetroItemCard({
        )}
        draggable={isDraggable} // Only make draggable if allowed
        onDragStart={handleDragStart}
-       onDragEnd={handleDragEnd} // Use the new handler
+       onDragEnd={handleDragEnd}
        data-item-id={item.id} // Ensure item ID is available for page-level drag handlers if needed
     >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
@@ -99,7 +109,7 @@ export function RetroItemCard({
           </div>
         </div>
         {canDelete && (
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => onDeleteItem(item.id)}>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => onDeleteItem && onDeleteItem(item.id)}>
             <Trash2 className="h-4 w-4" />
             <span className="sr-only">Delete item</span>
           </Button>
