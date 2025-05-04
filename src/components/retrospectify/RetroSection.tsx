@@ -13,7 +13,7 @@ interface RetroSectionProps {
   currentUser: User;
   onAddItem: (content: string) => void;
   onAddReply: (itemId: string, replyContent: string) => void;
-  onDeleteItem?: (itemId: string) => void; // Optional delete handler for non-poll sections
+  onDeleteItem?: (itemId: string) => void; // Optional delete handler
   allowAddingItems?: boolean; // Flag to control adding new items
   className?: string;
 }
@@ -52,7 +52,7 @@ export function RetroSection({
             item={item}
             currentUser={currentUser}
             onAddReply={onAddReply}
-            onDeleteItem={allowAddingItems ? onDeleteItem : undefined} // Only pass delete if adding is allowed
+            onDeleteItem={onDeleteItem} // Pass delete handler regardless of allowAddingItems
           />
         ))}
         {items.length === 0 && (

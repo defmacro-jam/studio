@@ -4,11 +4,13 @@ import { useState, useEffect, useMemo } from 'react';
 import type { RetroItem, PollResponse, User } from '@/lib/types';
 import { PollSection } from '@/components/retrospectify/PollSection';
 import { RetroSection } from '@/components/retrospectify/RetroSection';
-import { categorizeJustificationFlow } from '@/ai/flows/categorize-justification';
+// Import the wrapper function, not the flow directly
+import { categorizeJustification } from '@/ai/flows/categorize-justification';
 import { Toaster } from '@/components/ui/toaster';
 import { useToast } from '@/hooks/use-toast';
-import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton
-
+import { Skeleton } from '@/components/ui/skeleton';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Card, CardHeader, CardContent, CardFooter } from '@/components/ui/card'; // Import Card components for skeleton
 
 // Mock current user - replace with actual auth later
 const mockCurrentUser: User = {
@@ -50,35 +52,38 @@ export default function RetroSpectifyPage() {
         setIsLoading(false);
     }, 1500); // Simulate 1.5 second load time
     return () => clearTimeout(timer);
-  }, []);
+  }, []); // Added empty dependency array
 
   const hasUserSubmittedPoll = useMemo(() => {
     return pollResponses.some(resp => resp.author.id === currentUser.id);
   }, [pollResponses, currentUser.id]);
 
   const processJustification = async (rating: number, justification: string, responseId: string) => {
-      if (!justification.trim()) return; // Don't process empty justifications
+      // No need to check for empty justification here, the flow handles it
+      // if (!justification.trim()) return;
 
       try {
-          const result = await categorizeJustificationFlow({ rating, justification });
+          // Use the exported wrapper function
+          const result = await categorizeJustification({ rating, justification });
           if (result?.category) {
             const newItem: RetroItem = {
                 id: `poll-${responseId}`, // Link item to poll response
                 author: currentUser,
-                content: justification,
+                content: justification || `Rated ${rating} stars (No justification)`, // Handle empty justification display
                 timestamp: new Date(),
                 category: result.category,
             };
             setRetroItems(prev => [...prev, newItem]);
              toast({
                  title: "Feedback Added",
-                 description: `Your justification was added to "${result.category === 'well' ? 'What Went Well' : result.category === 'improve' ? 'What Could Be Improved' : 'Discussion Topics'}".`,
+                 description: `Your feedback was added to "${result.category === 'well' ? 'What Went Well' : result.category === 'improve' ? 'What Could Be Improved' : 'Discussion Topics'}". ${result.reasoning || ''}`,
              });
           } else {
-             throw new Error("Categorization failed.");
+             // This case might not be reachable if the flow guarantees a response, but kept for safety
+             throw new Error("Categorization failed to return a category.");
           }
       } catch (error) {
-          console.error("Error categorizing justification:", error);
+          console.error("Error processing justification:", error);
           toast({
             title: "Categorization Error",
             description: "Could not automatically categorize your feedback. It needs manual review.",
@@ -88,7 +93,7 @@ export default function RetroSpectifyPage() {
            const newItem: RetroItem = {
                id: `poll-${responseId}-error`,
                author: currentUser,
-               content: justification + " (Needs Categorization)",
+               content: justification ? `${justification} (Needs Categorization)` : `Rated ${rating} stars (Needs Categorization)`,
                timestamp: new Date(),
                category: 'discuss',
            };
@@ -96,24 +101,24 @@ export default function RetroSpectifyPage() {
       }
   };
 
-  // Process existing poll responses on load
+  // Process existing poll responses on load - Simplified, doesn't call AI on load
   const processInitialPollResponses = (responses: PollResponse[]) => {
       responses.forEach(resp => {
           // Check if an item for this poll response already exists
           if (!retroItems.some(item => item.id === `poll-${resp.id}`)) {
               // Find the author details (assuming author is part of response object)
               const author = resp.author; // In real scenario, might need lookup
-              if (author && resp.justification) {
-                   // Use a simplified categorization for initial load or run the flow
-                   // For simplicity here, basic rating logic:
+              if (author) { // Process even without justification
+                   // Use basic rating logic for initial load:
                    const category = resp.rating >= 4 ? 'well' : resp.rating <= 2 ? 'improve' : 'discuss';
                    const newItem: RetroItem = {
                         id: `poll-${resp.id}`,
                         author: author,
-                        content: resp.justification,
+                        content: resp.justification || `Rated ${resp.rating} stars (No justification)`,
                         timestamp: resp.timestamp,
                         category: category,
                    };
+                   // Avoid direct state mutation in loop, collect and update once if performance becomes an issue
                    setRetroItems(prev => [...prev, newItem]);
               }
           }
@@ -174,8 +179,8 @@ export default function RetroSpectifyPage() {
   };
 
    const handleDeleteItem = (itemId: string) => {
-    setRetroItems(prev => prev.filter(item => item.id !== itemId && !(item.replies && item.replies.some(r => r.id === itemId))));
-    // Also potentially delete replies if the parent is deleted (or handle orphan replies)
+    setRetroItems(prev => prev.filter(item => item.id !== itemId)); // Simplified delete
+    // Consider cascading deletes for replies or re-parenting if necessary
      toast({
         title: "Item Deleted",
         variant: "destructive"
@@ -184,13 +189,15 @@ export default function RetroSpectifyPage() {
 
 
   const filterItems = (category: 'well' | 'improve' | 'discuss' | 'action') => {
-    return retroItems.filter(item => item.category === category).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+    // Filter out items that are actually replies nested within other items
+    const topLevelItems = retroItems.filter(item => !retroItems.some(parent => parent.replies?.some(reply => reply.id === item.id)));
+    return topLevelItems.filter(item => item.category === category).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
   };
 
    // Loading state UI
   if (isLoading) {
     return (
-      <div className="container mx-auto p-4 md:p-8">
+      <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
         <h1 className="text-3xl font-bold mb-6 text-primary">RetroSpectify</h1>
          <div className="mb-6">
              <Skeleton className="h-48 w-full rounded-lg" />
@@ -248,6 +255,7 @@ export default function RetroSpectifyPage() {
           currentUser={currentUser}
           onAddItem={() => {}} // No direct adding
           onAddReply={handleAddReply}
+          onDeleteItem={handleDeleteItem} // Allow deleting poll-generated items
           allowAddingItems={false} // Items come from Poll
           className="bg-teal-50/50 border-teal-200"
         />
@@ -257,6 +265,7 @@ export default function RetroSpectifyPage() {
           currentUser={currentUser}
           onAddItem={() => {}} // No direct adding
           onAddReply={handleAddReply}
+           onDeleteItem={handleDeleteItem} // Allow deleting poll-generated items
           allowAddingItems={false} // Items come from Poll
           className="bg-amber-50/50 border-amber-200"
         />
