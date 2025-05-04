@@ -1,7 +1,8 @@
 
+
 "use client";
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, type DragEvent } from 'react'; // Import useCallback and DragEvent
 import type { RetroItem, PollResponse, User } from '@/lib/types';
 import { PollSection } from '@/components/retrospectify/PollSection';
 import { PollResultsSection } from '@/components/retrospectify/PollResultsSection';
@@ -37,13 +38,17 @@ const mockInitialPollResponses: PollResponse[] = [
      { id: 'p3', author: { id: 'user-555', name: 'Dana Scully', avatarUrl: 'https://picsum.photos/id/4/100/100' }, rating: 2, justification: "Project X team was overly needy on the help channel.", timestamp: new Date(Date.now() - 3600000 * 8) },
 ];
 
+type Category = 'well' | 'improve' | 'discuss' | 'action';
+
+
 export default function RetroSpectifyPage() {
   const [retroItems, setRetroItems] = useState<RetroItem[]>(mockInitialItems);
   const [pollResponses, setPollResponses] = useState<PollResponse[]>(mockInitialPollResponses);
   const [currentUser] = useState<User>(mockCurrentUser);
   const [isLoading, setIsLoading] = useState(true);
   const [hasSubmitted, setHasSubmitted] = useState(false);
-  const [isEditingPoll, setIsEditingPoll] = useState(false); // State for poll editing mode
+  const [isEditingPoll, setIsEditingPoll] = useState(false);
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null); // State for dragging item ID
   const { toast } = useToast();
 
   // Check initial submission status on mount
@@ -71,8 +76,6 @@ export default function RetroSpectifyPage() {
           localStorage.setItem(`pollSubmitted-${currentUser.id}`, 'true');
        }
     }
-    // Note: We don't set hasSubmitted to false here if the response is deleted,
-    // as the local storage flag would still be true. Handling full deletion requires more state/logic.
   }, [pollResponses, currentUser.id]);
 
 
@@ -84,30 +87,32 @@ export default function RetroSpectifyPage() {
 
   // Derived state to determine if the poll should be shown or results
   const shouldShowResults = useMemo(() => {
-    return hasSubmitted && !isEditingPoll; // Show results only if submitted and not editing
+    return hasSubmitted && !isEditingPoll;
   }, [hasSubmitted, isEditingPoll]);
 
   const shouldShowPollForm = useMemo(() => {
-      return !hasSubmitted || isEditingPoll; // Show form if not submitted OR editing
+      return !hasSubmitted || isEditingPoll;
   }, [hasSubmitted, isEditingPoll]);
 
 
   // Function to remove existing AI-generated items for a specific poll response
-  const removeExistingPollItems = (responseId: string) => {
+  const removeExistingPollItems = useCallback((responseId: string) => {
       setRetroItems(prev => prev.filter(item => !(item.isFromPoll && item.pollResponseId === responseId)));
-  };
+  }, []);
 
 
-  const processJustification = async (rating: number, justification: string, responseId: string) => {
+  const processJustification = useCallback(async (rating: number, justification: string, responseId: string, currentUserId: string) => {
        // Remove any previously generated items for this poll response BEFORE adding new ones
        removeExistingPollItems(responseId);
+
+       const author = currentUser; // Use the currentUser state directly
 
       if (!justification.trim()) {
           const category = rating >= 4 ? 'well' : rating <= 2 ? 'improve' : 'discuss';
           const newItem: RetroItem = {
               id: `poll-${responseId}-rating`,
-              pollResponseId: responseId, // Link item to the poll response
-              author: currentUser,
+              pollResponseId: responseId,
+              author: author,
               content: `Rated ${rating} stars (No justification)`,
               timestamp: new Date(),
               category: category,
@@ -127,8 +132,8 @@ export default function RetroSpectifyPage() {
           if (categorizedSentences && categorizedSentences.length > 0) {
             const newItems: RetroItem[] = categorizedSentences.map((categorizedSentence, index) => ({
                 id: `poll-${responseId}-s${index}`,
-                pollResponseId: responseId, // Link item to the poll response
-                author: currentUser,
+                pollResponseId: responseId,
+                author: author,
                 content: categorizedSentence.sentence,
                 timestamp: new Date(),
                 category: categorizedSentence.category,
@@ -155,8 +160,8 @@ export default function RetroSpectifyPage() {
           } else if (justification.trim()) {
              const newItem: RetroItem = {
                id: `poll-${responseId}-discuss`,
-               pollResponseId: responseId, // Link item to the poll response
-               author: currentUser,
+               pollResponseId: responseId,
+               author: author,
                content: justification,
                timestamp: new Date(),
                category: 'discuss',
@@ -178,8 +183,8 @@ export default function RetroSpectifyPage() {
           });
            const newItem: RetroItem = {
                id: `poll-${responseId}-error`,
-               pollResponseId: responseId, // Link item to the poll response
-               author: currentUser,
+               pollResponseId: responseId,
+               author: author,
                content: justification,
                timestamp: new Date(),
                category: 'discuss',
@@ -187,10 +192,10 @@ export default function RetroSpectifyPage() {
            };
            setRetroItems(prev => [...prev, newItem]);
       }
-  };
+  }, [currentUser, removeExistingPollItems, toast, isEditingPoll]); // Add isEditingPoll to dependencies
 
 
-  const handlePollSubmit = (rating: number, justification: string) => {
+  const handlePollSubmit = useCallback((rating: number, justification: string) => {
     let responseId: string;
     let isUpdate = false;
 
@@ -236,19 +241,19 @@ export default function RetroSpectifyPage() {
     }
 
     // Process justification (will also remove old items if updating)
-    processJustification(rating, justification, responseId);
+    processJustification(rating, justification, responseId, currentUser.id);
 
     setIsEditingPoll(false); // Exit editing mode after submit/update
-  };
+  }, [currentUser, isEditingPoll, pollResponses, processJustification, toast]); // Include dependencies
 
-  const handleEditPoll = () => {
+  const handleEditPoll = useCallback(() => {
      // Always allow entering edit mode if the button is clicked
     setIsEditingPoll(true);
      // No need to check currentUserResponse here, PollSection will handle initial state
-  };
+  }, []);
 
 
-  const handleAddItem = (category: 'well' | 'improve' | 'discuss' | 'action') => (content: string) => {
+  const handleAddItem = useCallback((category: Category) => (content: string) => {
     const newItem: RetroItem = {
       id: `${category}-${Date.now()}`,
       author: currentUser,
@@ -262,9 +267,9 @@ export default function RetroSpectifyPage() {
         title: "Item Added",
         description: `Your item was added to "${category === 'discuss' ? 'Discussion Topics' : category === 'action' ? 'Action Items' : category === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`,
       });
-  };
+  }, [currentUser, toast]); // Include dependencies
 
-  const handleAddReply = (itemId: string, replyContent: string) => {
+  const handleAddReply = useCallback((itemId: string, replyContent: string) => {
     setRetroItems(prev => prev.map(item => {
       if (item.id === itemId) {
         const newReply: RetroItem = {
@@ -284,9 +289,9 @@ export default function RetroSpectifyPage() {
      toast({
         title: "Reply Added",
      });
-  };
+  }, [currentUser, toast]); // Include dependencies
 
-   const handleDeleteItem = (itemId: string) => {
+   const handleDeleteItem = useCallback((itemId: string) => {
      // Prevent deleting items generated from the current user's *uneditable* poll response
      const itemToDelete = retroItems.find(item => item.id === itemId);
      if (itemToDelete?.isFromPoll && itemToDelete.author.id === currentUser.id && !isEditingPoll) {
@@ -303,10 +308,40 @@ export default function RetroSpectifyPage() {
         title: "Item Deleted",
         variant: "destructive"
     });
-   };
+   }, [currentUser.id, isEditingPoll, retroItems, toast]); // Include dependencies
 
 
-  const filterItems = (category: 'well' | 'improve' | 'discuss' | 'action') => {
+   // --- Drag and Drop Handlers ---
+   const handleDragStart = useCallback((e: DragEvent<HTMLDivElement>) => {
+      const itemId = e.currentTarget.getAttribute('data-item-id'); // Assuming card has data-item-id
+      if (itemId) {
+          setDraggingItemId(itemId);
+          e.dataTransfer.setData('text/plain', itemId); // Keep this for compatibility
+          e.dataTransfer.effectAllowed = "move";
+      }
+   }, []);
+
+   const handleDragEnd = useCallback(() => {
+      setDraggingItemId(null);
+   }, []);
+
+    const handleMoveItem = useCallback((itemId: string, targetCategory: Category) => {
+      setRetroItems(prev =>
+        prev.map(item =>
+          item.id === itemId && item.category !== targetCategory && !item.isFromPoll
+            ? { ...item, category: targetCategory, timestamp: new Date() } // Update category and timestamp
+            : item
+        )
+      );
+      toast({
+          title: "Item Moved",
+          description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'action' ? 'Action Items' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`
+      });
+      setDraggingItemId(null); // Clear dragging state after successful move
+    }, [toast]); // Include dependencies
+
+
+  const filterItems = (category: Category) => {
     const topLevelItems = retroItems.filter(item => !retroItems.some(parent => parent.replies?.some(reply => reply.id === item.id)));
     return topLevelItems.filter(item => item.category === category).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
   };
@@ -330,7 +365,7 @@ export default function RetroSpectifyPage() {
                       <Skeleton className="h-20 w-full rounded" />
                     </CardContent>
                     <CardFooter className="border-t p-4">
-                         <Skeleton className="h-10 w-full rounded" /> {/* Adjusted skeleton height */}
+                         <Skeleton className="h-10 w-full rounded" />
                     </CardFooter>
                 </Card>
             ))}
@@ -342,7 +377,11 @@ export default function RetroSpectifyPage() {
 
 
   return (
-    <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
+    <div
+        className="container mx-auto p-4 md:p-8 max-w-screen-2xl"
+        onDragStart={handleDragStart} // Attach drag start globally (or use event delegation)
+        onDragEnd={handleDragEnd}     // Attach drag end globally
+    >
         <header className="mb-8 flex justify-between items-center">
             <h1 className="text-3xl font-bold text-primary">RetroSpectify</h1>
             <div className="flex items-center space-x-3">
@@ -369,7 +408,6 @@ export default function RetroSpectifyPage() {
          {shouldShowResults && (
             <PollResultsSection
                 responses={pollResponses}
-                // Always pass handleEditPoll if the results are shown
                 onEdit={handleEditPoll}
             />
          )}
@@ -379,43 +417,55 @@ export default function RetroSpectifyPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <RetroSection
           title="What Went Well"
+          category="well" // Pass category
           items={filterItems('well')}
           currentUser={currentUser}
           onAddItem={handleAddItem('well')}
           onAddReply={handleAddReply}
+          onMoveItem={handleMoveItem} // Pass move handler
           onDeleteItem={handleDeleteItem}
           allowAddingItems={true}
+          draggingItemId={draggingItemId} // Pass dragging state
           className="bg-teal-50/50 border-teal-200 dark:bg-teal-900/20 dark:border-teal-700/50"
         />
         <RetroSection
           title="What Could Be Improved"
+          category="improve" // Pass category
           items={filterItems('improve')}
           currentUser={currentUser}
           onAddItem={handleAddItem('improve')}
           onAddReply={handleAddReply}
-           onDeleteItem={handleDeleteItem}
+          onMoveItem={handleMoveItem} // Pass move handler
+          onDeleteItem={handleDeleteItem}
           allowAddingItems={true}
+          draggingItemId={draggingItemId} // Pass dragging state
           className="bg-amber-50/50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-700/50"
         />
         <RetroSection
           title="Discussion Topics"
+          category="discuss" // Pass category
           items={filterItems('discuss')}
           currentUser={currentUser}
           onAddItem={handleAddItem('discuss')}
           onAddReply={handleAddReply}
+          onMoveItem={handleMoveItem} // Pass move handler
           onDeleteItem={handleDeleteItem}
           allowAddingItems={true}
-           className="bg-blue-50/50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-700/50"
+          draggingItemId={draggingItemId} // Pass dragging state
+          className="bg-blue-50/50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-700/50"
         />
         <RetroSection
           title="Action Items"
+          category="action" // Pass category
           items={filterItems('action')}
           currentUser={currentUser}
           onAddItem={handleAddItem('action')}
           onAddReply={handleAddReply}
+          onMoveItem={handleMoveItem} // Pass move handler
           onDeleteItem={handleDeleteItem}
           allowAddingItems={true}
-           className="bg-purple-50/50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-700/50"
+          draggingItemId={draggingItemId} // Pass dragging state
+          className="bg-purple-50/50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-700/50"
         />
       </div>
        <Toaster />

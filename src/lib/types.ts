@@ -1,4 +1,7 @@
 
+
+export type Category = 'well' | 'improve' | 'discuss' | 'action';
+
 export interface User {
   id: string;
   name: string;
@@ -11,7 +14,7 @@ export interface RetroItem {
   content: string;
   timestamp: Date;
   replies?: RetroItem[]; // Optional for replies
-  category?: 'well' | 'improve' | 'discuss' | 'action'; // Added category
+  category: Category; // Category is now required
   isFromPoll?: boolean; // Optional flag to indicate if item originated from a poll submission
   pollResponseId?: string; // Optional: ID of the PollResponse this item was generated from
 }

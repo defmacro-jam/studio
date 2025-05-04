@@ -1,20 +1,23 @@
+
 import type { RetroItem, User } from '@/lib/types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type DragEvent } from 'react';
 import { MessageSquare, Trash2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { cn } from '@/lib/utils';
 
 interface RetroItemCardProps {
   item: RetroItem;
   currentUser: User;
   onAddReply: (itemId: string, replyContent: string) => void;
   onDeleteItem?: (itemId: string) => void; // Optional delete handler
+  isDragging?: boolean; // Optional prop to style when dragging
 }
 
-export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem }: RetroItemCardProps) {
+export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem, isDragging }: RetroItemCardProps) {
   const [showReplyInput, setShowReplyInput] = useState(false);
   const [replyContent, setReplyContent] = useState('');
 
@@ -27,12 +30,41 @@ export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem }: R
     }
   };
 
-  const canDelete = onDeleteItem && item.author.id === currentUser.id;
+  const canDelete = onDeleteItem && item.author.id === currentUser.id && !item.isFromPoll;
   const allowReply = !item.isFromPoll; // Do not allow replies on items generated from poll justifications
+  const isDraggable = !item.isFromPoll; // Only allow non-poll items to be dragged
+
+  const handleDragStart = (e: DragEvent<HTMLDivElement>) => {
+     if (!isDraggable) {
+       e.preventDefault();
+       return;
+     }
+    e.dataTransfer.setData('text/plain', item.id); // Send item ID
+    e.dataTransfer.setData('application/json', JSON.stringify({ id: item.id, originalCategory: item.category })); // Send ID and original category
+    e.dataTransfer.effectAllowed = "move";
+     // Optional: Add a class to visually indicate dragging
+     // e.currentTarget.classList.add('opacity-50');
+  };
+
+   const handleDragEnd = (e: DragEvent<HTMLDivElement>) => {
+      if (!isDraggable) return;
+      // Optional: Remove dragging class
+     // e.currentTarget.classList.remove('opacity-50');
+   };
+
 
   return (
-    <Card className="mb-4 shadow-sm">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+    <Card
+       className={cn(
+         "mb-4 shadow-sm",
+         isDraggable && "cursor-grab", // Add grab cursor for draggable items
+         isDragging && "opacity-50 ring-2 ring-primary ring-offset-2" // Style when being dragged
+       )}
+       draggable={isDraggable}
+       onDragStart={handleDragStart}
+       onDragEnd={handleDragEnd} // Optional: for cleanup
+    >
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
         <div className="flex items-center space-x-3">
           <Avatar className="h-8 w-8">
             <AvatarImage src={item.author.avatarUrl} alt={item.author.name} data-ai-hint="avatar profile picture" />
@@ -52,11 +84,11 @@ export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem }: R
           </Button>
         )}
       </CardHeader>
-      <CardContent className="pb-3 pt-0">
+      <CardContent className="pb-3 pt-0 px-4">
         <p className="text-sm">{item.content}</p>
       </CardContent>
       {allowReply && ( // Only show reply button if allowed (not from poll)
-        <CardFooter className="flex justify-end pt-0 pb-3">
+        <CardFooter className="flex justify-end pt-0 pb-3 px-4">
           <Button variant="ghost" size="sm" onClick={() => setShowReplyInput(!showReplyInput)}>
             <MessageSquare className="mr-2 h-4 w-4" />
             Reply ({item.replies?.length ?? 0})
@@ -64,7 +96,7 @@ export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem }: R
         </CardFooter>
       )}
       {showReplyInput && allowReply && ( // Only show reply input if allowed and toggled
-        <CardFooter className="flex flex-col items-start space-y-2 pt-0 pb-4">
+        <CardFooter className="flex flex-col items-start space-y-2 pt-0 pb-4 px-4">
            {item.replies && item.replies.length > 0 && (
              <div className="w-full space-y-2 pl-6 border-l ml-4">
                {item.replies.map((reply) => (
@@ -108,7 +140,7 @@ export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem }: R
       )}
        {/* Display replies directly below the parent if not showing input AND replies are allowed */}
        {!showReplyInput && allowReply && item.replies && item.replies.length > 0 && (
-        <CardFooter className="flex flex-col items-start space-y-2 pt-0 pb-4">
+        <CardFooter className="flex flex-col items-start space-y-2 pt-0 pb-4 px-4">
             <div className="w-full space-y-2 pl-6 border-l ml-4">
                 {item.replies.map((reply) => (
                  <div key={reply.id} className="flex items-start space-x-2 text-xs">
