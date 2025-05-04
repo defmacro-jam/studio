@@ -24,8 +24,8 @@ export function RetroItemCard({
     currentUser,
     onAddReply,
     onDeleteItem,
-    onDragStartItem, // Ensure prop is destructured
-    onDragEndItem,   // Ensure prop is destructured
+    onDragStartItem,
+    onDragEndItem,
     isDragging
 }: RetroItemCardProps) {
   const [showReplyInput, setShowReplyInput] = useState(false);
@@ -44,9 +44,8 @@ export function RetroItemCard({
   // (The page component handles the editability check before calling onDeleteItem)
   const canDelete = onDeleteItem && item.author.id === currentUser.id;
 
-  // Allow replies on items from polls, discussion, and action items.
-  // Disallow replies ONLY on manually added 'well' or 'improve' items.
-  const allowReply = !(!item.isFromPoll && (item.category === 'well' || item.category === 'improve'));
+  // Allow replies on items UNLESS it's a manually added ('well' or 'improve') item belonging to the current user.
+  const allowReply = !(item.author.id === currentUser.id && !item.isFromPoll && (item.category === 'well' || item.category === 'improve'));
 
   // Allow the current user to drag their own items.
   const isDraggable = item.author.id === currentUser.id;
