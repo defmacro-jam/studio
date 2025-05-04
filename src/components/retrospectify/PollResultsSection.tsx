@@ -1,4 +1,5 @@
 
+
 "use client"
 
 import { useMemo } from "react";
@@ -18,6 +19,7 @@ import {
 interface PollResultsSectionProps {
   responses: PollResponse[];
   onEdit?: () => void; // Optional callback to trigger editing
+  currentUserHasVoted?: boolean; // Flag to know if the current user has voted
 }
 
 // Define the chart configuration with specific theme colors
@@ -33,7 +35,7 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 
-export function PollResultsSection({ responses, onEdit }: PollResultsSectionProps) {
+export function PollResultsSection({ responses, onEdit, currentUserHasVoted }: PollResultsSectionProps) {
     const totalResponses = responses.length;
 
     const ratingData = useMemo(() => {
@@ -76,7 +78,7 @@ export function PollResultsSection({ responses, onEdit }: PollResultsSectionProp
 
     return (
          // Wrap the Card with Accordion
-        <Accordion type="single" collapsible className="w-full">
+        <Accordion type="single" collapsible className="w-full" defaultValue="poll-results"> {/* Default to open */}
             <AccordionItem value="poll-results" className="border-b-0"> {/* Remove bottom border from item */}
                  <Card className="shadow-lg border-border/80 rounded-lg bg-card">
                      {/* Use CardHeader for padding and structure, and flexbox for layout */}
@@ -99,7 +101,8 @@ export function PollResultsSection({ responses, onEdit }: PollResultsSectionProp
                              </AccordionTrigger>
                          </div>
                          {/* Edit Button is a sibling to the trigger's wrapper */}
-                         {onEdit && (
+                         {/* Conditionally render Edit button only if the user has voted */}
+                         {currentUserHasVoted && onEdit && (
                             <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(); }} className="ml-4 flex-shrink-0"> {/* Added ml-4 for spacing */}
                                 <Edit className="mr-2 h-4 w-4" />
                                 Edit Vote
@@ -175,3 +178,5 @@ export function PollResultsSection({ responses, onEdit }: PollResultsSectionProp
         </Accordion>
     );
 }
+
+    

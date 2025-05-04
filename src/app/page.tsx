@@ -6,6 +6,7 @@ import type { RetroItem, PollResponse, User, Category } from '@/lib/types'; // I
 import { PollSection } from '@/components/retrospectify/PollSection';
 import { PollResultsSection } from '@/components/retrospectify/PollResultsSection';
 import { RetroSection } from '@/components/retrospectify/RetroSection';
+import { AdjustRatingModal } from '@/components/retrospectify/AdjustRatingModal'; // Import the new modal
 import { categorizeJustification } from '@/ai/flows/categorize-justification'; // Keep type import if only used for types here
 import { generateActionItem } from '@/ai/flows/generate-action-item'; // Import the new flow
 import { Toaster } from '@/components/ui/toaster';
@@ -31,12 +32,16 @@ const mockInitialItems: RetroItem[] = [
         { id: 'r1', author: { id: 'user-123', name: 'Alex Doe', avatarUrl: 'https://picsum.photos/id/1/100/100' }, content: 'Agreed, learned a lot!', timestamp: new Date(Date.now() - 3600000 * 4) }
     ]},
     { id: 'd2', author: { id: 'user-123', name: 'Alex Doe', avatarUrl: 'https://picsum.photos/id/1/100/100' }, content: 'Need clarity on the Q3 roadmap priorities.', timestamp: new Date(Date.now() - 3600000 * 1.5), category: 'discuss' }, // Added another discussion item
+    { id: 'w3', author: { id: 'user-123', name: 'Alex Doe', avatarUrl: 'https://picsum.photos/id/1/100/100' }, content: 'Manual item: Test move well to improve', timestamp: new Date(Date.now() - 3600000 * 0.8), category: 'well' }, // User's own item
+    { id: 'i2', author: { id: 'user-123', name: 'Alex Doe', avatarUrl: 'https://picsum.photos/id/1/100/100' }, content: 'Manual item: Test move improve to well', timestamp: new Date(Date.now() - 3600000 * 0.7), category: 'improve' }, // User's own item
 ];
 
 const mockInitialPollResponses: PollResponse[] = [
      { id: 'p1', author: { id: 'user-456', name: 'Bob Smith', avatarUrl: 'https://picsum.photos/id/2/100/100' }, rating: 4, justification: 'Good progress overall, minor hiccup with API.', timestamp: new Date(Date.now() - 3600000 * 6) },
      { id: 'p2', author: { id: 'user-789', name: 'Charlie Brown', avatarUrl: 'https://picsum.photos/id/3/100/100' }, rating: 5, justification: "Loved the free cookies!", timestamp: new Date(Date.now() - 3600000 * 7) },
      { id: 'p3', author: { id: 'user-555', name: 'Dana Scully', avatarUrl: 'https://picsum.photos/id/4/100/100' }, rating: 2, justification: "Project X team was overly needy on the help channel.", timestamp: new Date(Date.now() - 3600000 * 8) },
+     // Add current user's response for testing modal
+     { id: 'p4', author: { id: 'user-123', name: 'Alex Doe', avatarUrl: 'https://picsum.photos/id/1/100/100' }, rating: 3, justification: "Initial test justification.", timestamp: new Date(Date.now() - 3600000 * 9) },
 ];
 
 
@@ -46,8 +51,11 @@ export default function RetroSpectifyPage() {
   const [currentUser] = useState<User>(mockCurrentUser);
   const [isLoading, setIsLoading] = useState(true);
   const [hasSubmitted, setHasSubmitted] = useState(false);
-  const [isEditingPoll, setIsEditingPoll] = useState(false); // Fix: Initialize with false
+  const [isEditingPoll, setIsEditingPoll] = useState(false);
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null); // State for dragging item ID
+  const [isAdjustRatingModalOpen, setIsAdjustRatingModalOpen] = useState(false); // State for modal visibility
+  const [ratingAdjustmentProps, setRatingAdjustmentProps] = useState<{ currentRating: number; suggestedRating: number } | null>(null); // State for modal props
+
   const { toast } = useToast();
 
   // Check initial submission status on mount
@@ -56,7 +64,9 @@ export default function RetroSpectifyPage() {
     if (typeof window !== 'undefined') {
       submittedLocally = !!localStorage.getItem(`pollSubmitted-${currentUser.id}`);
     }
-    setHasSubmitted(submittedLocally);
+    // Also check if response exists in initial data
+    const userResponseExistsInitial = mockInitialPollResponses.some(resp => resp.author.id === currentUser.id);
+    setHasSubmitted(submittedLocally || userResponseExistsInitial);
 
     // Simulate loading data
     const timer = setTimeout(() => {
@@ -78,7 +88,7 @@ export default function RetroSpectifyPage() {
   }, [pollResponses, currentUser.id]);
 
 
-  // Memoize the current user's response for editing
+  // Memoize the current user's response for editing and rating adjustment
   const currentUserResponse = useMemo(() => {
     return pollResponses.find(resp => resp.author.id === currentUser.id);
   }, [pollResponses, currentUser.id]);
@@ -371,7 +381,7 @@ export default function RetroSpectifyPage() {
       setDraggingItemId(null);
    }, []);
 
-    // Updated handleMoveItem to incorporate AI generation for discuss -> action
+    // Updated handleMoveItem to incorporate AI generation for discuss -> action and rating adjustment prompt
     const handleMoveItem = useCallback((itemId: string, targetCategory: Category) => {
         const itemToMove = retroItems.find(item => item.id === itemId);
 
@@ -394,40 +404,91 @@ export default function RetroSpectifyPage() {
 
         // *** Special Case: Moving from 'discuss' to 'action' ***
         if (itemToMove.category === 'discuss' && targetCategory === 'action') {
-            // Instead of moving, trigger AI generation and DO NOT modify the original item
             handleGenerateActionItem(itemId);
-            setDraggingItemId(null); // Clear dragging state after triggering generation
-            return; // Stop execution here, don't proceed to the generic move logic
+            setDraggingItemId(null);
+            return;
         }
 
          // *** Restriction: Prevent moving *anything* directly into 'action' ***
-         // (Action items are only created via direct add or AI generation from 'discuss')
          if (targetCategory === 'action') {
              toast({
                  title: "Cannot Move to Action Items",
                  description: "Action Items are generated from Discussion Topics or added manually.",
                  variant: "destructive",
              });
-             setDraggingItemId(null); // Clear dragging state
-             return; // Stop execution
+             setDraggingItemId(null);
+             return;
          }
 
+         // *** Check for moving between 'well' and 'improve' ***
+         const isWellToImprove = itemToMove.category === 'well' && targetCategory === 'improve';
+         const isImproveToWell = itemToMove.category === 'improve' && targetCategory === 'well';
 
-        // --- Generic Move Logic (for all other valid moves) ---
+         if ((isWellToImprove || isImproveToWell) && currentUserResponse) {
+             // Suggest rating adjustment
+             const suggestedRating = isWellToImprove
+                 ? Math.max(1, currentUserResponse.rating - 1) // Decrease rating, min 1
+                 : Math.min(5, currentUserResponse.rating + 1); // Increase rating, max 5
+
+             // Only show modal if suggested rating is different from current
+             if (suggestedRating !== currentUserResponse.rating) {
+                setRatingAdjustmentProps({
+                    currentRating: currentUserResponse.rating,
+                    suggestedRating: suggestedRating,
+                });
+                setIsAdjustRatingModalOpen(true);
+                // NOTE: The actual item move happens *after* the modal interaction (or if skipped)
+                // We store the intended move temporarily or pass it to the modal handler.
+                // For simplicity here, we'll proceed with the move and let the modal update separately.
+             }
+         }
+
+        // --- Generic Move Logic (commit the move visually first) ---
         setRetroItems(prev =>
             prev.map(item =>
                 item.id === itemId
-                    ? { ...item, category: targetCategory, timestamp: new Date() } // Update category and timestamp
+                    ? { ...item, category: targetCategory, timestamp: new Date() }
                     : item
             )
         );
         toast({
             title: "Item Moved",
-            description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".` // Removed action from description
+            description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`
         });
 
         setDraggingItemId(null); // Clear dragging state after a successful move
-    }, [currentUser.id, retroItems, toast, handleGenerateActionItem]); // Ensure all dependencies are included
+
+    }, [currentUser.id, retroItems, toast, handleGenerateActionItem, currentUserResponse]); // Include dependencies
+
+    // Handler for AdjustRatingModal confirmation
+    const handleAdjustRatingConfirm = useCallback((newRating: number) => {
+        if (!currentUserResponse) return;
+
+        // Update the poll response state
+        setPollResponses(prev =>
+            prev.map(resp =>
+                resp.id === currentUserResponse.id
+                    ? { ...resp, rating: newRating, timestamp: new Date() }
+                    : resp
+            )
+        );
+
+        toast({
+            title: "Rating Adjusted",
+            description: `Your sentiment poll rating was updated to ${newRating} stars.`,
+        });
+
+        setIsAdjustRatingModalOpen(false); // Close modal
+        setRatingAdjustmentProps(null); // Clear props
+    }, [currentUserResponse, toast]);
+
+    // Handler for AdjustRatingModal cancellation
+    const handleAdjustRatingCancel = useCallback(() => {
+        setIsAdjustRatingModalOpen(false); // Close modal
+        setRatingAdjustmentProps(null); // Clear props
+        // The item move already happened visually, so just close the modal.
+    }, []);
+
 
 
   const filterItems = (category: Category) => {
@@ -495,6 +556,7 @@ export default function RetroSpectifyPage() {
             <PollResultsSection
                 responses={pollResponses}
                 onEdit={handleEditPoll}
+                currentUserHasVoted={!!currentUserResponse} // Pass flag indicating if current user voted
             />
          )}
       </div>
@@ -546,8 +608,6 @@ export default function RetroSpectifyPage() {
           onDragStartItem={handleDragStart} // Pass drag start handler
           onDragEndItem={handleDragEnd}     // Pass drag end handler
           className="bg-blue-50/50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-700/50"
-          // Indicate that dropping on Action Items is special for 'discuss' items
-          isDropTargetForActionGeneration={true}
         />
         <RetroSection
           title="Action Items"
@@ -563,11 +623,25 @@ export default function RetroSpectifyPage() {
           onDragStartItem={handleDragStart} // Pass drag start handler
           onDragEndItem={handleDragEnd}     // Pass drag end handler
           className="bg-purple-50/50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-700/50"
+          isDropTargetForActionGeneration={true} // Keep this for visual cues if needed
           // Disable dropping for regular moves, but allow for the AI generation case (handled by onMoveItem logic)
-          // isDropDisabled={true} // We handle drop disabling in `handleMoveItem` logic based on source
+          // isDropDisabled={true} // Drop disabling handled in `handleMoveItem` logic
         />
       </div>
+
+       {/* Rating Adjustment Modal */}
+       {ratingAdjustmentProps && (
+         <AdjustRatingModal
+           isOpen={isAdjustRatingModalOpen}
+           currentRating={ratingAdjustmentProps.currentRating}
+           suggestedRating={ratingAdjustmentProps.suggestedRating}
+           onConfirm={handleAdjustRatingConfirm}
+           onCancel={handleAdjustRatingCancel}
+         />
+       )}
        <Toaster />
     </div>
   );
 }
+
+    
