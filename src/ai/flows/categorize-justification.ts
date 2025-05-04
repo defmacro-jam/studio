@@ -1,15 +1,16 @@
 'use server';
 /**
- * @fileOverview Categorizes user justification based on rating and text using an LLM.
+ * @fileOverview Categorizes each sentence of a user's justification text
+ *               into 'well' or 'improve' categories using an LLM.
  *
- * - categorizeJustification - A function to categorize feedback.
+ * - categorizeJustification - A function to categorize feedback sentences.
  * - CategorizeJustificationInput - Input schema for the categorization.
- * - CategorizeJustificationOutput - Output schema for the categorization.
+ * - CategorizeJustificationOutput - Output schema for the categorization (array of sentences).
  */
 import { ai } from '@/ai/ai-instance';
 import { z } from 'genkit';
 
-// Define input schema using ai.defineSchema for clarity and potential reuse
+// Define input schema - Remains the same
 const CategorizeJustificationInputSchema = ai.defineSchema(
     'CategorizeJustificationInput',
     z.object({
@@ -20,15 +21,22 @@ const CategorizeJustificationInputSchema = ai.defineSchema(
 export type CategorizeJustificationInput = z.infer<typeof CategorizeJustificationInputSchema>;
 
 
-// Define output schema using ai.defineSchema
-const CategorizeJustificationOutputSchema = ai.defineSchema(
-    'CategorizeJustificationOutput',
+// Define the schema for a single categorized sentence
+const SentenceCategorySchema = ai.defineSchema(
+    'SentenceCategory',
     z.object({
-        category: z.enum(['well', 'improve', 'discuss']).describe("The category the feedback belongs to ('well', 'improve', 'discuss')"),
-        reasoning: z.string().optional().describe("Brief explanation for the chosen category"),
+        sentence: z.string().describe("An individual sentence from the justification."),
+        category: z.enum(['well', 'improve']).describe("The category the sentence belongs to ('well' or 'improve').")
     })
 );
+
+// Define the output schema as an array of categorized sentences
+const CategorizeJustificationOutputSchema = ai.defineSchema(
+    'CategorizeJustificationOutput',
+    z.array(SentenceCategorySchema).describe("An array of categorized sentences from the justification.")
+);
 export type CategorizeJustificationOutput = z.infer<typeof CategorizeJustificationOutputSchema>;
+
 
 // Define the prompt using ai.definePrompt
 const categorizationPrompt = ai.definePrompt(
@@ -37,24 +45,25 @@ const categorizationPrompt = ai.definePrompt(
         input: { schema: CategorizeJustificationInputSchema },
         output: { schema: CategorizeJustificationOutputSchema },
         prompt: `
-            Analyze the following team retrospective feedback and categorize it based on the content and rating.
-            Rating (1-5 stars, 1=bad, 5=good): {{{rating}}}
+            Analyze the following team retrospective feedback justification, ignoring the provided rating.
             Justification: "{{{justification}}}"
 
-            Categorize the justification into one of the following:
-            1.  'well': Positive feedback, things that went well.
-            2.  'improve': Constructive criticism, challenges, things that could be better.
-            3.  'discuss': Neutral observations, questions, topics needing clarification or team input.
+            Your task is to:
+            1. Break the justification text into individual sentences.
+            2. For EACH sentence, categorize it as either 'well' or 'improve'.
+                - 'well': Represents positive feedback, successes, or things that went well (e.g., "Deployment was fast", "Great teamwork").
+                - 'improve': Represents constructive criticism, challenges, problems, areas for development, or things that could be better (e.g., "The build failed", "Communication was unclear", "Need more testing").
+            3. Ignore any sentences that are purely neutral observations, questions, or explicit discussion points (e.g., "We should discuss this", "Is this the right approach?"). Do not include these neutral/discussion sentences in the output array.
+            4. If the justification is empty or contains no sentences that fit into 'well' or 'improve', return an empty array.
 
-            Rules:
-            - Rating 4-5 + positive/neutral text => 'well'.
-            - Rating 1-2 + negative text => 'improve'.
-            - Rating 3 OR mixed/ambiguous text OR questions => 'discuss'.
-            - If justification contradicts rating (e.g., rating 5, text lists problems), prioritize justification sentiment. Consider 'discuss' or 'improve'.
-            - If justification has both pros and cons => 'discuss'.
-            - If justification is empty or whitespace, rely solely on rating: >= 4 is 'well', <= 2 is 'improve', 3 is 'discuss'.
+            Return the results ONLY as a JSON array of objects, where each object contains the 'sentence' and its determined 'category' ('well' or 'improve'). Match the output schema precisely.
 
-            Provide a brief reasoning for your choice. Respond ONLY with the JSON object matching the output schema.
+            Example Input Justification: "The deployment was smooth. However, the testing phase took too long. We should discuss the process."
+            Example Output:
+            [
+              { "sentence": "The deployment was smooth.", "category": "well" },
+              { "sentence": "However, the testing phase took too long.", "category": "improve" }
+            ]
         `,
     }
 );
@@ -71,21 +80,20 @@ const categorizeJustificationFlow = ai.defineFlow<
         outputSchema: CategorizeJustificationOutputSchema,
     },
     async (input) => {
-        const { rating, justification } = input;
-
-        // Handle empty justification explicitly before calling LLM
-        if (!justification?.trim()) {
-            const category = rating >= 4 ? 'well' : rating <= 2 ? 'improve' : 'discuss';
-            return { category, reasoning: "Categorized based on rating only (no justification provided)." };
+        // Let the prompt handle empty justification
+        if (!input.justification?.trim()) {
+            return []; // Return empty array if justification is empty
         }
 
         try {
             const { output } = await categorizationPrompt(input); // Pass the validated input directly
-            return output!; // output should conform to CategorizeJustificationOutputSchema
+            // Output should conform to CategorizeJustificationOutputSchema (array of SentenceCategory)
+            // If output is null/undefined (unexpected), return empty array.
+            return output ?? [];
         } catch (error) {
              console.error("Error during categorization flow:", error);
-             // Provide a default fallback response that matches the schema
-            return { category: 'discuss', reasoning: 'Failed to categorize due to an internal error. Defaulted to discuss.' };
+             // Provide a default fallback response (empty array)
+            return [];
         }
     }
 );
@@ -95,7 +103,7 @@ const categorizeJustificationFlow = ai.defineFlow<
  * Public function to invoke the categorization flow.
  * Ensures the flow is called with validated input.
  * @param input - The justification data.
- * @returns The categorized result.
+ * @returns An array of categorized sentences.
  */
 export async function categorizeJustification(input: CategorizeJustificationInput): Promise<CategorizeJustificationOutput> {
     // Validate input using the Zod schema before calling the flow

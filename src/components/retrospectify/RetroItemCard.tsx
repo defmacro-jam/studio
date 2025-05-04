@@ -28,6 +28,7 @@ export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem }: R
   };
 
   const canDelete = onDeleteItem && item.author.id === currentUser.id;
+  const allowReply = !item.isFromPoll; // Do not allow replies on items generated from poll justifications
 
   return (
     <Card className="mb-4 shadow-sm">
@@ -54,7 +55,7 @@ export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem }: R
       <CardContent className="pb-3 pt-0">
         <p className="text-sm">{item.content}</p>
       </CardContent>
-      {!item.category && ( // Only show reply button if not a poll justification
+      {allowReply && ( // Only show reply button if allowed (not from poll)
         <CardFooter className="flex justify-end pt-0 pb-3">
           <Button variant="ghost" size="sm" onClick={() => setShowReplyInput(!showReplyInput)}>
             <MessageSquare className="mr-2 h-4 w-4" />
@@ -62,7 +63,7 @@ export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem }: R
           </Button>
         </CardFooter>
       )}
-      {showReplyInput && (
+      {showReplyInput && allowReply && ( // Only show reply input if allowed and toggled
         <CardFooter className="flex flex-col items-start space-y-2 pt-0 pb-4">
            {item.replies && item.replies.length > 0 && (
              <div className="w-full space-y-2 pl-6 border-l ml-4">
@@ -105,8 +106,8 @@ export function RetroItemCard({ item, currentUser, onAddReply, onDeleteItem }: R
           </form>
         </CardFooter>
       )}
-       {/* Display replies directly below the parent if not showing input */}
-       {!showReplyInput && item.replies && item.replies.length > 0 && (
+       {/* Display replies directly below the parent if not showing input AND replies are allowed */}
+       {!showReplyInput && allowReply && item.replies && item.replies.length > 0 && (
         <CardFooter className="flex flex-col items-start space-y-2 pt-0 pb-4">
             <div className="w-full space-y-2 pl-6 border-l ml-4">
                 {item.replies.map((reply) => (

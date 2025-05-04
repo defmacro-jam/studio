@@ -11,6 +11,7 @@ export interface RetroItem {
   timestamp: Date;
   replies?: RetroItem[]; // Optional for replies
   category?: 'well' | 'improve' | 'discuss' | 'action'; // Added category
+  isFromPoll?: boolean; // Optional flag to indicate if item originated from a poll submission
 }
 
 export interface PollResponse {

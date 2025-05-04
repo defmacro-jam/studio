@@ -5,7 +5,7 @@ import type { RetroItem, PollResponse, User } from '@/lib/types';
 import { PollSection } from '@/components/retrospectify/PollSection';
 import { RetroSection } from '@/components/retrospectify/RetroSection';
 // Import the wrapper function, not the flow directly
-import { categorizeJustification } from '@/ai/flows/categorize-justification';
+import { categorizeJustification, type CategorizeJustificationOutput } from '@/ai/flows/categorize-justification';
 import { Toaster } from '@/components/ui/toaster';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -47,8 +47,8 @@ export default function RetroSpectifyPage() {
     // Replace with actual data fetching
     const timer = setTimeout(() => {
         // In a real app, fetch initialItems and pollResponses here
-        // Process initial poll responses (if any)
-        processInitialPollResponses(mockInitialPollResponses);
+        // Process initial poll responses (if any) - Simplified, no AI on load
+        // processInitialPollResponses(mockInitialPollResponses);
         setIsLoading(false);
     }, 1500); // Simulate 1.5 second load time
     return () => clearTimeout(timer);
@@ -59,71 +59,119 @@ export default function RetroSpectifyPage() {
   }, [pollResponses, currentUser.id]);
 
   const processJustification = async (rating: number, justification: string, responseId: string) => {
-      // No need to check for empty justification here, the flow handles it
-      // if (!justification.trim()) return;
+      if (!justification.trim()) {
+          // If justification is empty, categorize based on rating directly
+          const category = rating >= 4 ? 'well' : rating <= 2 ? 'improve' : 'discuss';
+          const newItem: RetroItem = {
+              id: `poll-${responseId}-rating`,
+              author: currentUser,
+              content: `Rated ${rating} stars (No justification)`,
+              timestamp: new Date(),
+              category: category,
+              isFromPoll: true, // Mark as from poll
+          };
+          setRetroItems(prev => [...prev, newItem]);
+          toast({
+              title: "Feedback Added",
+              description: `Your rating was added to "${category === 'well' ? 'What Went Well' : category === 'improve' ? 'What Could Be Improved' : 'Discussion Topics'}".`,
+          });
+          return;
+      }
 
       try {
           // Use the exported wrapper function
-          const result = await categorizeJustification({ rating, justification });
-          if (result?.category) {
-            const newItem: RetroItem = {
-                id: `poll-${responseId}`, // Link item to poll response
+          const categorizedSentences = await categorizeJustification({ rating, justification });
+
+          if (categorizedSentences && categorizedSentences.length > 0) {
+            const newItems: RetroItem[] = categorizedSentences.map((categorizedSentence, index) => ({
+                id: `poll-${responseId}-s${index}`, // Unique ID for each sentence item
                 author: currentUser,
-                content: justification || `Rated ${rating} stars (No justification)`, // Handle empty justification display
+                content: categorizedSentence.sentence,
                 timestamp: new Date(),
-                category: result.category,
-            };
-            setRetroItems(prev => [...prev, newItem]);
+                category: categorizedSentence.category, // 'well' or 'improve'
+                isFromPoll: true, // Mark as from poll
+            }));
+
+            setRetroItems(prev => [...prev, ...newItems]);
+
+            // Show a single toast summarizing the additions
+            const wellCount = newItems.filter(item => item.category === 'well').length;
+            const improveCount = newItems.filter(item => item.category === 'improve').length;
+            let description = "Your feedback was processed.";
+            if (wellCount > 0 && improveCount > 0) {
+                description = `Added ${wellCount} item(s) to 'What Went Well' and ${improveCount} item(s) to 'What Could Be Improved'.`;
+            } else if (wellCount > 0) {
+                 description = `Added ${wellCount} item(s) to 'What Went Well'.`;
+            } else if (improveCount > 0) {
+                 description = `Added ${improveCount} item(s) to 'What Could Be Improved'.`;
+            }
+
              toast({
-                 title: "Feedback Added",
-                 description: `Your feedback was added to "${result.category === 'well' ? 'What Went Well' : result.category === 'improve' ? 'What Could Be Improved' : 'Discussion Topics'}". ${result.reasoning || ''}`,
+                 title: "Feedback Categorized",
+                 description: description,
+             });
+          } else if (justification.trim()) {
+             // AI returned empty array, but justification was provided. Treat as discuss.
+             const newItem: RetroItem = {
+               id: `poll-${responseId}-discuss`,
+               author: currentUser,
+               content: justification,
+               timestamp: new Date(),
+               category: 'discuss', // Fallback to discuss if AI finds nothing to categorize
+               isFromPoll: true,
+             };
+             setRetroItems(prev => [...prev, newItem]);
+             toast({
+               title: "Feedback Added",
+               description: "Your feedback was added to 'Discussion Topics' for review.",
+               variant: "default",
              });
           } else {
-             // This case might not be reachable if the flow guarantees a response, but kept for safety
-             throw new Error("Categorization failed to return a category.");
+              // This case should technically be handled by the initial check, but included for safety
+             console.warn("Processing justification resulted in empty output despite non-empty input.");
           }
       } catch (error) {
           console.error("Error processing justification:", error);
           toast({
             title: "Categorization Error",
-            description: "Could not automatically categorize your feedback. It needs manual review.",
+            description: "Could not automatically categorize your feedback. Added to 'Discussion Topics'.",
             variant: "destructive",
           });
-          // Optionally add to a default 'discuss' category or handle error differently
+          // Add the full justification to 'discuss' as a fallback
            const newItem: RetroItem = {
                id: `poll-${responseId}-error`,
                author: currentUser,
-               content: justification ? `${justification} (Needs Categorization)` : `Rated ${rating} stars (Needs Categorization)`,
+               content: justification,
                timestamp: new Date(),
                category: 'discuss',
+               isFromPoll: true,
            };
            setRetroItems(prev => [...prev, newItem]);
       }
   };
 
-  // Process existing poll responses on load - Simplified, doesn't call AI on load
-  const processInitialPollResponses = (responses: PollResponse[]) => {
-      responses.forEach(resp => {
-          // Check if an item for this poll response already exists
-          if (!retroItems.some(item => item.id === `poll-${resp.id}`)) {
-              // Find the author details (assuming author is part of response object)
-              const author = resp.author; // In real scenario, might need lookup
-              if (author) { // Process even without justification
-                   // Use basic rating logic for initial load:
-                   const category = resp.rating >= 4 ? 'well' : resp.rating <= 2 ? 'improve' : 'discuss';
-                   const newItem: RetroItem = {
-                        id: `poll-${resp.id}`,
-                        author: author,
-                        content: resp.justification || `Rated ${resp.rating} stars (No justification)`,
-                        timestamp: resp.timestamp,
-                        category: category,
-                   };
-                   // Avoid direct state mutation in loop, collect and update once if performance becomes an issue
-                   setRetroItems(prev => [...prev, newItem]);
-              }
-          }
-      });
-  };
+  // Process existing poll responses on load - REMOVED AI CALL ON LOAD
+  // const processInitialPollResponses = (responses: PollResponse[]) => {
+  //     responses.forEach(resp => {
+  //         // Check if an item for this poll response already exists
+  //         if (!retroItems.some(item => item.id && item.id.startsWith(`poll-${resp.id}`))) {
+  //             const author = resp.author;
+  //             if (author) {
+  //                 // Simplified logic for initial load: Put full justification into category based on rating
+  //                  const category = resp.rating >= 4 ? 'well' : resp.rating <= 2 ? 'improve' : 'discuss';
+  //                  const newItem: RetroItem = {
+  //                       id: `poll-${resp.id}-initial`, // Use a distinct initial ID pattern
+  //                       author: author,
+  //                       content: resp.justification || `Rated ${resp.rating} stars (No justification)`,
+  //                       timestamp: resp.timestamp,
+  //                       category: category,
+  //                       isFromPoll: true,
+  //                  };
+  //                  setRetroItems(prev => [...prev, newItem]);
+  //             }
+  //         }
+  //     });
+  // };
 
 
   const handlePollSubmit = (rating: number, justification: string) => {
@@ -148,6 +196,7 @@ export default function RetroSpectifyPage() {
       content,
       timestamp: new Date(),
       category,
+      isFromPoll: false, // Manually added item
     };
     setRetroItems(prev => [...prev, newItem]);
      toast({
@@ -164,6 +213,7 @@ export default function RetroSpectifyPage() {
           author: currentUser,
           content: replyContent,
           timestamp: new Date(),
+          isFromPoll: false, // Replies are not directly from poll
           // Replies don't have categories themselves
         };
         return {
