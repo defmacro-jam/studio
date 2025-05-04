@@ -22,6 +22,9 @@ interface RetroSectionProps {
   allowAddingItems?: boolean;
   className?: string;
   draggingItemId?: string | null; // ID of the item currently being dragged
+  onDragStartItem: (itemId: string) => void; // Callback for drag start
+  onDragEndItem: () => void; // Callback for drag end
+  isDropTargetForActionGeneration?: boolean; // Optional flag for action item target styling
 }
 
 export function RetroSection({
@@ -36,6 +39,9 @@ export function RetroSection({
   allowAddingItems = true,
   className,
   draggingItemId,
+  onDragStartItem, // Receive drag start handler
+  onDragEndItem,   // Receive drag end handler
+  isDropTargetForActionGeneration = false, // Default to false
 }: RetroSectionProps) {
   const [newItemContent, setNewItemContent] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
@@ -50,8 +56,33 @@ export function RetroSection({
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault(); // Necessary to allow dropping
-    e.dataTransfer.dropEffect = "move";
-    setIsDragOver(true);
+     // Check if the dragged item is valid for this drop target
+     const dataString = e.dataTransfer.getData('application/json');
+     let canDrop = false;
+     if (dataString) {
+       try {
+         const { originalCategory } = JSON.parse(dataString);
+         // General rule: cannot drop in the same category
+         if (originalCategory !== category) {
+            // Specific rule: Only 'discuss' can drop into 'action'
+            if (category === 'action') {
+                canDrop = originalCategory === 'discuss';
+            } else {
+                // Otherwise, allow dropping if categories are different
+                 canDrop = true;
+            }
+         }
+       } catch {
+         // Ignore parsing errors
+       }
+     }
+
+     if (canDrop) {
+         e.dataTransfer.dropEffect = "move";
+         setIsDragOver(true);
+     } else {
+          e.dataTransfer.dropEffect = "none";
+     }
   };
 
   const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
@@ -71,8 +102,14 @@ export function RetroSection({
         const { id: droppedItemId, originalCategory } = JSON.parse(dataString);
 
         // Prevent dropping onto the same column or if item is not draggable (should be handled by dragstart too)
+        // Also check the specific rule for dropping into 'action'
         if (droppedItemId && originalCategory !== category) {
-            onMoveItem(droppedItemId, category);
+            if (category === 'action' && originalCategory !== 'discuss') {
+                // Invalid drop into action column
+                console.warn("Cannot move non-discussion items directly to Action Items.");
+                return;
+            }
+             onMoveItem(droppedItemId, category);
         }
     } catch (error) {
         console.error("Failed to parse dropped data:", error);
@@ -91,7 +128,7 @@ export function RetroSection({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
     >
-      <CardHeader className="sticky top-0 bg-background z-10 border-b">
+      <CardHeader className="sticky top-0 bg-card z-10 border-b"> {/* Changed background to card */}
         <CardTitle className="text-lg font-semibold flex items-center">
             {title} <span className="ml-2 text-sm font-normal text-muted-foreground">({items.length})</span>
         </CardTitle>
@@ -104,25 +141,27 @@ export function RetroSection({
             currentUser={currentUser}
             onAddReply={onAddReply}
             onDeleteItem={onDeleteItem}
+            onDragStartItem={onDragStartItem} // Pass down drag start handler
+            onDragEndItem={onDragEndItem}     // Pass down drag end handler
             isDragging={draggingItemId === item.id} // Pass dragging state
           />
         ))}
         {items.length === 0 && !isDragOver && ( // Hide "No items yet" when dragging over
             <p className="text-sm text-muted-foreground text-center py-4">No items yet.</p>
         )}
-         {isDragOver && ( // Placeholder when dragging over an empty section
+         {isDragOver && ( // Placeholder when dragging over
               <div className="h-24 border-2 border-dashed border-primary/50 rounded-md flex items-center justify-center text-primary/80">
-                 Drop here to move
+                 {category === 'action' ? 'Drop to generate Action Item' : 'Drop here to move'}
               </div>
          )}
       </CardContent>
       {allowAddingItems && (
-        <form onSubmit={handleAddItemSubmit} className="p-4 border-t space-y-2">
+        <form onSubmit={handleAddItemSubmit} className="p-4 border-t bg-card space-y-2"> {/* Changed background to card */}
           <Textarea
             placeholder={`Add to "${title}"...`}
             value={newItemContent}
             onChange={(e) => setNewItemContent(e.target.value)}
-            className="min-h-[60px]"
+            className="min-h-[60px] bg-background" // Explicitly set textarea background
           />
           <div className="flex justify-end">
              <Button type="submit" disabled={!newItemContent.trim()}>
