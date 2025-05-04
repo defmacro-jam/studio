@@ -54,35 +54,11 @@ export function RetroSection({
     }
   };
 
+  // Simplified handleDragOver: Always prevent default and set visual indicator.
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault(); // Necessary to allow dropping
-     // Check if the dragged item is valid for this drop target
-     const dataString = e.dataTransfer.getData('application/json');
-     let canDrop = false;
-     if (dataString) {
-       try {
-         const { originalCategory } = JSON.parse(dataString);
-         // General rule: cannot drop in the same category
-         if (originalCategory !== category) {
-            // Specific rule: Only 'discuss' can drop into 'action'
-            if (category === 'action') {
-                canDrop = originalCategory === 'discuss';
-            } else {
-                // Otherwise, allow dropping if categories are different
-                 canDrop = true;
-            }
-         }
-       } catch {
-         // Ignore parsing errors
-       }
-     }
-
-     if (canDrop) {
-         e.dataTransfer.dropEffect = "move";
-         setIsDragOver(true);
-     } else {
-          e.dataTransfer.dropEffect = "none";
-     }
+    e.preventDefault(); // Necessary to allow the drop event to fire
+    e.dataTransfer.dropEffect = "move"; // Indicate that a move is possible
+    setIsDragOver(true);
   };
 
   const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
@@ -92,27 +68,42 @@ export function RetroSection({
      }
   };
 
+  // Centralized drop logic: Validate the drop here *after* it happens.
   const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragOver(false);
+    e.preventDefault(); // Prevent default browser behavior (e.g., navigating)
+    setIsDragOver(false); // Reset visual indicator
     const dataString = e.dataTransfer.getData('application/json');
-    if (!dataString) return;
+    if (!dataString) {
+        console.warn("No data transferred on drop.");
+        return;
+    }
 
     try {
         const { id: droppedItemId, originalCategory } = JSON.parse(dataString);
 
-        // Prevent dropping onto the same column or if item is not draggable (should be handled by dragstart too)
-        // Also check the specific rule for dropping into 'action'
-        if (droppedItemId && originalCategory !== category) {
-            if (category === 'action' && originalCategory !== 'discuss') {
-                // Invalid drop into action column
-                console.warn("Cannot move non-discussion items directly to Action Items.");
-                return;
-            }
-             onMoveItem(droppedItemId, category);
+        if (!droppedItemId || !originalCategory) {
+            console.warn("Drop failed: Missing item ID or original category.");
+            return;
         }
+
+        // Prevent dropping onto the same column
+        if (originalCategory === category) {
+             // console.log("Drop prevented: Same category.");
+             return;
+        }
+
+        // Specific rule: Only 'discuss' can trigger action generation when dropped on 'action'
+        if (category === 'action' && originalCategory !== 'discuss') {
+            console.warn("Cannot move non-discussion items directly to Action Items.");
+             // Optionally show a toast message here using a prop passed down from page.tsx if needed
+            return; // Invalid drop into action column
+        }
+
+        // If all checks pass, call the move item handler (defined in page.tsx)
+        onMoveItem(droppedItemId, category);
+
     } catch (error) {
-        console.error("Failed to parse dropped data:", error);
+        console.error("Failed to parse dropped data or execute move:", error);
     }
   };
 
@@ -126,7 +117,7 @@ export function RetroSection({
        )}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
+        onDrop={handleDrop} // Ensure onDrop is correctly bound
     >
       <CardHeader className="sticky top-0 bg-card z-10 border-b"> {/* Changed background to card */}
         <CardTitle className="text-lg font-semibold flex items-center">
@@ -174,3 +165,4 @@ export function RetroSection({
     </Card>
   );
 }
+
