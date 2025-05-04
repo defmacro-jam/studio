@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, UserPlus, Trash2, Mail, Crown } from 'lucide-react';
+import { Loader2, UserPlus, Trash2, Mail, Crown, Users } from 'lucide-react'; // Added Users icon
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
@@ -43,11 +43,12 @@ function TeamPageContent() {
   const [isInviting, setIsInviting] = useState(false);
   const [isRemoving, setIsRemoving] = useState<string | null>(null); // Track which member is being removed
   const [error, setError] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null); // Specific error for invite form
 
   const isOwner = currentUser && teamData && currentUser.uid === teamData.owner;
 
    const fetchTeamData = useCallback(async () => {
-       if (!teamId) return;
+       if (!teamId || !currentUser) return; // Ensure currentUser is available
        setLoadingTeam(true);
        setError(null);
        try {
@@ -56,10 +57,11 @@ function TeamPageContent() {
 
            if (teamDocSnap.exists()) {
                const data = teamDocSnap.data() as Omit<TeamData, 'id'>;
-                // Basic check if current user is a member before setting data
-                if (!currentUser || !data.members.includes(currentUser.uid)) {
+                // Check if current user is a member before setting data
+                if (!data.members.includes(currentUser.uid)) {
                      setError("You are not a member of this team or the team doesn't exist.");
                      toast({ title: 'Access Denied', description: 'You do not have permission to view this team.', variant: 'destructive' });
+                     setLoadingTeam(false); // Stop loading
                      router.push('/'); // Redirect if not a member
                      return;
                 }
@@ -67,14 +69,16 @@ function TeamPageContent() {
            } else {
                setError('Team not found.');
                toast({ title: 'Error', description: 'Team not found.', variant: 'destructive' });
+               setLoadingTeam(false); // Stop loading
                router.push('/'); // Redirect if team doesn't exist
            }
        } catch (err) {
            console.error('Error fetching team data:', err);
            setError('Failed to load team data.');
            toast({ title: 'Error', description: 'Could not load team details.', variant: 'destructive' });
+           setLoadingTeam(false); // Stop loading
        } finally {
-           setLoadingTeam(false);
+            // Moved setLoading(false) inside conditional blocks to avoid setting it prematurely on error/redirect
        }
    }, [teamId, currentUser, router, toast]); // Add dependencies
 
@@ -86,11 +90,22 @@ function TeamPageContent() {
        }
        setLoadingMembers(true);
        try {
+            // Firestore allows querying up to 30 elements in 'in' array query in a single request
+            // If team members exceed this, pagination or multiple queries are needed.
+            // For simplicity, assuming teams are smaller than 30 for now.
            const membersQuery = query(collection(db, 'users'), where('uid', 'in', teamData.members));
            const querySnapshot = await getDocs(membersQuery);
            const membersData = querySnapshot.docs.map(doc => doc.data() as TeamMember);
+
+           // Create a map for quick lookup
+            const memberMap = new Map(membersData.map(m => [m.uid, m]));
+
+            // Ensure all members from teamData.members are included, even if missing in users collection (though unlikely)
+            const fullMemberList = teamData.members.map(uid => memberMap.get(uid) || { uid, email: 'Unknown User', displayName: 'Unknown User' });
+
+
            // Sort members: Owner first, then alphabetically by display name or email
-           membersData.sort((a, b) => {
+           fullMemberList.sort((a, b) => {
                if (a.uid === teamData.owner) return -1;
                if (b.uid === teamData.owner) return 1;
                const nameA = a.displayName || a.email;
@@ -98,7 +113,7 @@ function TeamPageContent() {
                return nameA.localeCompare(nameB);
            });
 
-           setTeamMembers(membersData);
+           setTeamMembers(fullMemberList);
        } catch (err) {
            console.error('Error fetching team members:', err);
            toast({ title: 'Error', description: 'Could not load team members.', variant: 'destructive' });
@@ -108,32 +123,41 @@ function TeamPageContent() {
    }, [teamData, toast]); // Add dependencies
 
   useEffect(() => {
-      if(currentUser) { // Only fetch if user is loaded
+      if(currentUser && teamId) { // Only fetch if user and teamId are available
          fetchTeamData();
+      } else if (!teamId) {
+         setError("Team ID is missing.");
+         setLoadingTeam(false);
+      } else if (!currentUser) {
+         // Still loading auth or user not logged in - ProtectedRoute handles redirect
+         setLoadingTeam(false);
       }
   }, [teamId, currentUser, fetchTeamData]); // Run when teamId or currentUser changes
 
   useEffect(() => {
-    if (teamData) {
+    // Fetch members only if teamData is loaded successfully
+    if (teamData && !error) {
       fetchTeamMembers();
     }
-  }, [teamData, fetchTeamMembers]); // Run when teamData changes
+  }, [teamData, fetchTeamMembers, error]); // Run when teamData or error changes
 
   const handleInviteMember = async (e: FormEvent) => {
     e.preventDefault();
     if (!isOwner || !teamData || !inviteEmail.trim()) return;
 
     setIsInviting(true);
-    setError(null);
+    setInviteError(null); // Clear previous invite errors
+
+    const emailToInvite = inviteEmail.trim().toLowerCase();
 
     try {
         // 1. Find the user by email
         const usersRef = collection(db, 'users');
-        const q = query(usersRef, where('email', '==', inviteEmail.trim().toLowerCase()));
+        const q = query(usersRef, where('email', '==', emailToInvite));
         const querySnapshot = await getDocs(q);
 
         if (querySnapshot.empty) {
-            setError('User with this email not found.');
+            setInviteError('User with this email not found.');
             toast({ title: 'Invite Failed', description: 'User not found.', variant: 'destructive' });
             setIsInviting(false);
             return;
@@ -141,11 +165,11 @@ function TeamPageContent() {
 
         const userDoc = querySnapshot.docs[0];
         const userId = userDoc.id;
-        const userData = userDoc.data();
+        const userData = userDoc.data() as TeamMember; // Cast to TeamMember
 
         // 2. Check if user is already a member
         if (teamData.members.includes(userId)) {
-             setError('User is already a member of this team.');
+             setInviteError('User is already a member of this team.');
              toast({ title: 'Invite Failed', description: 'User is already in the team.', variant: 'default' });
              setIsInviting(false);
              return;
@@ -164,7 +188,7 @@ function TeamPageContent() {
 
       // TODO: Implement sending an actual email invitation (e.g., using Firebase Functions + SendGrid/Nodemailer)
       // This requires backend setup. For now, we just add them directly.
-      console.log(`TODO: Send email invitation to ${inviteEmail}`);
+      console.log(`SIMULATED: Email invitation would be sent to ${emailToInvite}. User added directly.`);
 
       toast({
         title: 'Member Added',
@@ -172,11 +196,11 @@ function TeamPageContent() {
       });
       setInviteEmail('');
       // Refresh team data and members after adding
-      fetchTeamData();
+      fetchTeamData(); // This will trigger fetchTeamMembers subsequently
 
     } catch (err: any) {
       console.error('Invite error:', err);
-      setError('Failed to add member. Please try again.');
+      setInviteError('Failed to add member. Please try again.');
       toast({ title: 'Invite Failed', description: 'An error occurred.', variant: 'destructive' });
     } finally {
       setIsInviting(false);
@@ -190,6 +214,11 @@ function TeamPageContent() {
        setError(null);
 
        try {
+            const memberToRemove = teamMembers.find(m => m.uid === memberUid);
+            if (!memberToRemove) {
+                throw new Error("Member data not found locally.");
+            }
+
            // Atomically remove member from team and team from member's list
            const batch = writeBatch(db);
            const teamDocRef = doc(db, 'teams', teamData.id);
@@ -200,14 +229,13 @@ function TeamPageContent() {
 
            await batch.commit();
 
-           const removedMember = teamMembers.find(m => m.uid === memberUid);
            toast({
                title: 'Member Removed',
-               description: `${removedMember?.displayName || removedMember?.email || 'User'} has been removed from the team.`,
+               description: `${memberToRemove.displayName || memberToRemove.email} has been removed from the team.`,
                variant: 'destructive'
            });
            // Refresh team data and members
-           fetchTeamData();
+           fetchTeamData(); // This will trigger fetchTeamMembers
 
        } catch (err: any) {
            console.error('Remove member error:', err);
@@ -219,6 +247,7 @@ function TeamPageContent() {
    };
 
 
+  // Display loading indicator while fetching initial team data or auth state is loading
   if (loadingTeam || !currentUser) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -227,7 +256,8 @@ function TeamPageContent() {
     );
   }
 
-   if (error) {
+   // Display error message if team fetching failed or access denied
+   if (error && !teamData) { // Show error only if teamData is null (i.e., initial fetch failed or access denied)
        return (
             <div className="flex items-center justify-center min-h-screen">
                 <Card className="w-full max-w-md shadow-xl bg-destructive/10 border-destructive">
@@ -246,9 +276,9 @@ function TeamPageContent() {
    }
 
 
+  // This state should ideally not be reached if logic above is correct, but as a safeguard:
   if (!teamData) {
-    // This case should ideally be covered by the error state, but adding for robustness
-    return <div className="flex items-center justify-center min-h-screen"><p>Team data not available.</p></div>;
+    return <div className="flex items-center justify-center min-h-screen"><p>Loading team data...</p></div>;
   }
 
   return (
@@ -270,37 +300,46 @@ function TeamPageContent() {
           </CardHeader>
           <CardContent>
                {loadingMembers ? (
-                    <div className="space-y-3">
-                        {[1, 2, 3].map(i => <Loader2 key={i} className="h-5 w-5 animate-spin text-muted-foreground"/>)}
+                    <div className="space-y-4 p-4">
+                        {[1, 2, 3].map(i =>
+                           <div key={i} className="flex items-center space-x-4">
+                             <Skeleton className="h-10 w-10 rounded-full" />
+                             <div className="space-y-2">
+                               <Skeleton className="h-4 w-[150px]" />
+                               <Skeleton className="h-3 w-[100px]" />
+                             </div>
+                           </div>
+                         )}
                     </div>
                ) : teamMembers.length === 0 ? (
-                   <p className="text-muted-foreground">No members found.</p>
+                   <p className="text-muted-foreground px-4 py-2">This team has no members yet.</p>
                ) : (
                   <ul className="space-y-3">
                       {teamMembers.map((member) => (
-                          <li key={member.uid} className="flex items-center justify-between p-3 bg-card border rounded-md">
-                              <div className="flex items-center gap-3">
-                                  <Avatar className="h-9 w-9">
-                                      <AvatarImage src={member.avatarUrl} alt={member.displayName || member.email} data-ai-hint="avatar profile picture" />
-                                      <AvatarFallback>{(member.displayName || member.email || 'U').charAt(0).toUpperCase()}</AvatarFallback>
+                          <li key={member.uid} className="flex items-center justify-between p-3 bg-card border rounded-md hover:bg-secondary/50 transition-colors">
+                              <div className="flex items-center gap-3 overflow-hidden">
+                                  <Avatar className="h-9 w-9 flex-shrink-0">
+                                      <AvatarImage src={member.avatarUrl || undefined} alt={member.displayName || member.email} data-ai-hint="avatar profile picture" />
+                                      <AvatarFallback>{(member.displayName || member.email || '?').charAt(0).toUpperCase()}</AvatarFallback>
                                   </Avatar>
-                                  <div>
-                                       <span className="font-medium">{member.displayName || member.email}</span>
+                                  <div className="overflow-hidden">
+                                       <span className="font-medium block truncate">{member.displayName || member.email}</span>
                                        {member.uid === teamData.owner && (
-                                           <span className="ml-2 text-xs text-amber-600 dark:text-amber-400 font-semibold inline-flex items-center">
+                                           <span className="text-xs text-amber-600 dark:text-amber-400 font-semibold inline-flex items-center">
                                                 <Crown className="h-3 w-3 mr-1"/> Owner
                                            </span>
                                        )}
-                                       <p className="text-xs text-muted-foreground">{member.email}</p>
+                                       <p className="text-xs text-muted-foreground truncate">{member.email}</p>
                                   </div>
 
                               </div>
+                              {/* Remove Button (for Owner, not self) */}
                               {isOwner && member.uid !== currentUser.uid && (
                                   <AlertDialog>
                                       <AlertDialogTrigger asChild>
-                                           <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={isRemoving === member.uid}>
+                                           <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive flex-shrink-0 ml-2" disabled={isRemoving === member.uid}>
                                                 {isRemoving === member.uid ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                                                <span className="ml-2 hidden sm:inline">Remove</span>
+                                                <span className="ml-1 hidden sm:inline">Remove</span>
                                            </Button>
                                       </AlertDialogTrigger>
                                       <AlertDialogContent>
@@ -336,34 +375,34 @@ function TeamPageContent() {
            <Card>
              <CardHeader>
                <CardTitle className="text-xl">Invite New Member</CardTitle>
-               <CardDescription>Enter the email address of the user you want to add to the team.</CardDescription>
+               <CardDescription>Enter the email address of the user you want to add to the team. They must already have a RetroSpectify account.</CardDescription>
              </CardHeader>
              <form onSubmit={handleInviteMember}>
                <CardContent className="space-y-4">
-                 <div className="flex flex-col sm:flex-row gap-2">
+                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
                     <Label htmlFor="inviteEmail" className="sr-only">Email Address</Label>
                     <Input
                         id="inviteEmail"
                         type="email"
                         placeholder="member@example.com"
                         value={inviteEmail}
-                        onChange={(e) => setInviteEmail(e.target.value)}
+                        onChange={(e) => { setInviteEmail(e.target.value); setInviteError(null); }} // Clear error on input change
                         required
                         disabled={isInviting}
                         className="flex-grow"
                      />
-                    <Button type="submit" disabled={isInviting || !inviteEmail.trim()} className="w-full sm:w-auto">
+                    <Button type="submit" disabled={isInviting || !inviteEmail.trim()} className="w-full sm:w-auto flex-shrink-0">
                         {isInviting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
                         {isInviting ? 'Adding...' : 'Add Member'}
                     </Button>
                  </div>
-                 {error && <p className="text-sm text-destructive pt-2">{error}</p>}
+                 {inviteError && <p className="text-sm text-destructive pt-1">{inviteError}</p>}
                </CardContent>
-               {/* <CardFooter> - Button moved inside content for better layout */}
-               {/* </CardFooter> */}
              </form>
            </Card>
        )}
+        {/* General Error Display (for non-invite related errors) */}
+       {error && <p className="text-sm text-destructive mt-4">{error}</p>}
     </div>
   );
 }

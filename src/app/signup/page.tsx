@@ -50,13 +50,16 @@ export default function SignupPage() {
        return;
      }
 
+    const userDisplayName = displayName.trim() || email.split('@')[0]; // Default display name from email prefix if none provided
+
+
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // Update profile with display name
+      // Update profile with display name in Firebase Auth
       await updateProfile(user, {
-        displayName: displayName || email.split('@')[0], // Default display name from email prefix
+        displayName: userDisplayName,
       });
 
        // Send email verification
@@ -69,21 +72,21 @@ export default function SignupPage() {
       });
 
 
-      // Create user document in Firestore (optional, based on your data model)
-      // Example: storing display name and creation time
+      // Create user document in Firestore
+      // Store basic info needed for team management etc.
       await setDoc(doc(db, 'users', user.uid), {
         uid: user.uid,
-        email: user.email,
-        displayName: displayName || email.split('@')[0],
+        email: user.email?.toLowerCase(), // Store email consistently in lowercase
+        displayName: userDisplayName,
         createdAt: serverTimestamp(),
-        teams: [], // Initialize empty teams array
-        avatarUrl: null, // Placeholder for avatar
+        teams: [], // Initialize empty teams array (user might join/create later)
+        avatarUrl: null, // Placeholder for avatar - can be updated later via profile settings
       });
 
 
       toast({
         title: 'Signup Successful',
-        description: 'Welcome to RetroSpectify! Please verify your email.',
+        description: `Welcome, ${userDisplayName}! Please verify your email.`,
       });
       router.push('/'); // Redirect to home or a 'please verify' page
 
@@ -119,11 +122,11 @@ export default function SignupPage() {
         <form onSubmit={handleSignup}>
           <CardContent className="space-y-4">
              <div className="space-y-2">
-               <Label htmlFor="displayName">Display Name (Optional)</Label>
+               <Label htmlFor="displayName">Display Name</Label>
                <Input
                  id="displayName"
                  type="text"
-                 placeholder="Your Name"
+                 placeholder="Your Name (optional, uses email prefix if blank)"
                  value={displayName}
                  onChange={(e) => setDisplayName(e.target.value)}
                  disabled={loading}
@@ -168,7 +171,7 @@ export default function SignupPage() {
             {error && <p className="text-sm text-destructive">{error}</p>}
           </CardContent>
           <CardFooter className="flex flex-col gap-4">
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full" disabled={loading || !email}>
               {loading ? 'Signing Up...' : <> <UserPlus className="mr-2 h-4 w-4"/> Sign Up </> }
             </Button>
             <p className="text-sm text-center text-muted-foreground">

@@ -1,3 +1,4 @@
+import * as React from "react"; // Added import for React
 import { cn } from "@/lib/utils"
 
 function Skeleton({
