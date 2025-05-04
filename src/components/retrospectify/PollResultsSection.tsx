@@ -79,11 +79,11 @@ export function PollResultsSection({ responses, onEdit }: PollResultsSectionProp
         <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="poll-results" className="border-b-0"> {/* Remove bottom border from item */}
                  <Card className="shadow-lg border-border/80 rounded-lg bg-card">
-                     {/* AccordionTrigger wraps the header content */}
-                     <AccordionTrigger className="p-0 hover:no-underline">
-                         {/* Use CardHeader for padding and structure */}
-                         <CardHeader className="pb-4 pt-4 px-6 flex flex-row justify-between items-center w-full">
-                             <div className="flex items-center space-x-4"> {/* Group title/desc with chevron */}
+                     {/* Use CardHeader for padding and structure, and flexbox for layout */}
+                     <CardHeader className="pb-4 pt-4 px-6 flex flex-row justify-between items-center w-full">
+                         {/* AccordionTrigger now only wraps the clickable title/description area */}
+                         <AccordionTrigger className="p-0 hover:no-underline flex-grow">
+                             <div className="flex items-center space-x-4"> {/* Group title/desc */}
                                  <div>
                                     <CardTitle className="text-xl font-bold text-primary">Weekly Sentiment</CardTitle>
                                     <CardDescription className="text-sm">
@@ -93,18 +93,17 @@ export function PollResultsSection({ responses, onEdit }: PollResultsSectionProp
                                         }
                                     </CardDescription>
                                  </div>
-                                 {/* Chevron is automatically added by AccordionTrigger, remove manual one if present */}
-                                 {/* <ChevronDown className="h-4 w-4 shrink-0 transition-transform duration-200 text-muted-foreground group-data-[state=open]:rotate-180" /> */}
+                                 {/* Chevron is automatically added by AccordionTrigger, no need for manual one */}
                              </div>
-                             {/* Edit Button */}
-                            {onEdit && (
-                                <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(); }} className="mr-4"> {/* Prevent trigger click */}
-                                    <Edit className="mr-2 h-4 w-4" />
-                                    Edit Vote
-                                </Button>
-                            )}
-                         </CardHeader>
-                     </AccordionTrigger>
+                         </AccordionTrigger>
+                         {/* Edit Button is now a sibling to AccordionTrigger, not a child */}
+                         {onEdit && (
+                            <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(); }} className="ml-4 flex-shrink-0"> {/* Added ml-4 for spacing */}
+                                <Edit className="mr-2 h-4 w-4" />
+                                Edit Vote
+                            </Button>
+                        )}
+                     </CardHeader>
                      {/* AccordionContent wraps the chart */}
                      <AccordionContent className="pt-0"> {/* Remove top padding */}
                          <CardContent className="py-2 px-6"> {/* Maintain padding */}
