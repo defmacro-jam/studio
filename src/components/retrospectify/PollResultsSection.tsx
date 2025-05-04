@@ -77,8 +77,8 @@ export function PollResultsSection({ responses, onEdit, currentUserHasVoted }: P
     }, [responses, totalResponses]);
 
     return (
-         // Wrap the Card with Accordion
-        <Accordion type="single" collapsible className="w-full" defaultValue="poll-results"> {/* Default to open */}
+         // Wrap the Card with Accordion - Removed defaultValue to make it closed by default
+        <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="poll-results" className="border-b-0"> {/* Remove bottom border from item */}
                  <Card className="shadow-lg border-border/80 rounded-lg bg-card">
                      {/* Use CardHeader for padding and structure, and flexbox for layout */}
@@ -178,5 +178,3 @@ export function PollResultsSection({ responses, onEdit, currentUserHasVoted }: P
         </Accordion>
     );
 }
-
-    
