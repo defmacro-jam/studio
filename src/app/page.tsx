@@ -46,21 +46,35 @@ export default function RetroSpectifyPage() {
   const [isEditingPoll, setIsEditingPoll] = useState(false); // State for poll editing mode
   const { toast } = useToast();
 
-  // Check initial submission status and find existing response on mount
+  // Check initial submission status on mount
   useEffect(() => {
     let submittedLocally = false;
     if (typeof window !== 'undefined') {
       submittedLocally = !!localStorage.getItem(`pollSubmitted-${currentUser.id}`);
     }
-    const userResponseExists = pollResponses.some(resp => resp.author.id === currentUser.id);
-    setHasSubmitted(submittedLocally || userResponseExists);
+    setHasSubmitted(submittedLocally);
 
     // Simulate loading data
     const timer = setTimeout(() => {
         setIsLoading(false);
     }, 1500);
     return () => clearTimeout(timer);
-  }, [currentUser.id, pollResponses]); // Added pollResponses dependency
+  }, [currentUser.id]); // Only depends on currentUser.id for initial check
+
+  // Recalculate hasSubmitted if pollResponses change (e.g., after submission)
+  useEffect(() => {
+    const userResponseExists = pollResponses.some(resp => resp.author.id === currentUser.id);
+    if (userResponseExists) {
+      setHasSubmitted(true);
+      // Optionally sync localStorage if needed
+       if (typeof window !== 'undefined' && !localStorage.getItem(`pollSubmitted-${currentUser.id}`)) {
+          localStorage.setItem(`pollSubmitted-${currentUser.id}`, 'true');
+       }
+    }
+    // Note: We don't set hasSubmitted to false here if the response is deleted,
+    // as the local storage flag would still be true. Handling full deletion requires more state/logic.
+  }, [pollResponses, currentUser.id]);
+
 
   // Memoize the current user's response for editing
   const currentUserResponse = useMemo(() => {
@@ -180,9 +194,11 @@ export default function RetroSpectifyPage() {
     let responseId: string;
     let isUpdate = false;
 
-    if (isEditingPoll && currentUserResponse) {
+    const existingResponse = pollResponses.find(resp => resp.author.id === currentUser.id);
+
+    if (isEditingPoll && existingResponse) {
         // --- Update existing response ---
-        responseId = currentUserResponse.id;
+        responseId = existingResponse.id;
         isUpdate = true;
         setPollResponses(prev =>
             prev.map(resp =>
@@ -226,9 +242,9 @@ export default function RetroSpectifyPage() {
   };
 
   const handleEditPoll = () => {
-    if (currentUserResponse) {
-      setIsEditingPoll(true); // Enter editing mode
-    }
+     // Always allow entering edit mode if the button is clicked
+    setIsEditingPoll(true);
+     // No need to check currentUserResponse here, PollSection will handle initial state
   };
 
 
@@ -353,7 +369,8 @@ export default function RetroSpectifyPage() {
          {shouldShowResults && (
             <PollResultsSection
                 responses={pollResponses}
-                onEdit={currentUserResponse ? handleEditPoll : undefined} // Pass edit handler only if user has response
+                // Always pass handleEditPoll if the results are shown
+                onEdit={handleEditPoll}
             />
          )}
       </div>
