@@ -664,84 +664,101 @@ function RetroSpectifyPageContent() {
 
     // Handler for AdjustRatingModal confirmation
     const handleAdjustRatingConfirm = useCallback((newRating: number) => {
-        if (!currentUserResponse || !appUser || !draggingItemId) return;
+        try {
+            if (!currentUserResponse || !appUser || !draggingItemId) {
+                 console.error("Cannot confirm rating adjustment: Missing context.");
+                 return;
+            }
 
-         const itemToMove = retroItems.find(item => item.id === draggingItemId);
-         if (!itemToMove) {
-             console.error("Error adjusting rating: Original item not found.");
-             setIsAdjustRatingModalOpen(false);
-             setRatingAdjustmentProps(null);
-             setDraggingItemId(null);
-             return;
-         }
+            const itemToMove = retroItems.find(item => item.id === draggingItemId);
+            if (!itemToMove) {
+                console.error("Error adjusting rating: Original item not found.");
+                return;
+            }
 
-         // Determine the target category based on the direction of the move
-         const targetCategory = itemToMove.category === 'well' ? 'improve' : 'well';
+            // Determine the target category based on the direction of the move
+            const targetCategory = itemToMove.category === 'well' ? 'improve' : 'well';
 
-         // 1. Update poll response rating
-         // TODO: Update poll response rating in DB
-         setPollResponses(prev =>
-             prev.map(resp =>
-                 resp.id === currentUserResponse.id
-                     ? { ...resp, rating: newRating, timestamp: new Date() }
-                     : resp
-             )
-         );
+            // 1. Update poll response rating
+            // TODO: Update poll response rating in DB
+            setPollResponses(prev =>
+                prev.map(resp =>
+                    resp.id === currentUserResponse.id
+                        ? { ...resp, rating: newRating, timestamp: new Date() }
+                        : resp
+                )
+            );
 
-         // 2. Move the retro item
-         // TODO: Update item category in DB
-         setRetroItems(prev =>
-             prev.map(item =>
-                 item.id === draggingItemId
-                     ? { ...item, category: targetCategory, timestamp: new Date() }
-                     : item
-             )
-         );
+            // 2. Move the retro item
+            // TODO: Update item category in DB
+            setRetroItems(prev =>
+                prev.map(item =>
+                    item.id === draggingItemId
+                        ? { ...item, category: targetCategory, timestamp: new Date() }
+                        : item
+                )
+            );
 
-        toast({
-            title: "Rating Adjusted & Item Moved",
-            description: `Your sentiment rating updated to ${newRating} stars and item moved.`,
-        });
-
-        setIsAdjustRatingModalOpen(false);
-        setRatingAdjustmentProps(null);
-        setDraggingItemId(null);
-
+            toast({
+                title: "Rating Adjusted & Item Moved",
+                description: `Your sentiment rating updated to ${newRating} stars and item moved.`,
+            });
+        } catch (error) {
+            console.error("Error in handleAdjustRatingConfirm:", error);
+            toast({
+                 title: "Error Adjusting Rating",
+                 description: "Could not update rating and move item.",
+                 variant: "destructive"
+             });
+        } finally {
+            setIsAdjustRatingModalOpen(false);
+            setRatingAdjustmentProps(null);
+            setDraggingItemId(null);
+        }
     }, [currentUserResponse, appUser, toast, draggingItemId, retroItems]);
 
     // Handler for AdjustRatingModal cancellation
     const handleAdjustRatingCancel = useCallback(() => {
-         if (!draggingItemId) return;
+         try {
+             if (!draggingItemId) {
+                  console.error("Cannot cancel rating adjustment: Missing item ID.");
+                  return;
+             }
 
-         const itemToMove = retroItems.find(item => item.id === draggingItemId);
-         if (!itemToMove) {
-             console.error("Error cancelling rating adjustment: Original item not found.");
-             setIsAdjustRatingModalOpen(false);
-             setRatingAdjustmentProps(null);
-             setDraggingItemId(null);
-             return;
+             const itemToMove = retroItems.find(item => item.id === draggingItemId);
+             if (!itemToMove) {
+                 console.error("Error cancelling rating adjustment: Original item not found.");
+                 return;
+             }
+
+             const targetCategory = itemToMove.category === 'well' ? 'improve' : 'well';
+
+             // Move the retro item without changing the rating
+             // TODO: Update item category in DB
+             setRetroItems(prev =>
+                 prev.map(item =>
+                     item.id === draggingItemId
+                         ? { ...item, category: targetCategory, timestamp: new Date() }
+                         : item
+                 )
+             );
+
+             toast({
+                 title: "Item Moved",
+                 description: `Item moved, but sentiment rating kept at ${ratingAdjustmentProps?.currentRating || 'previous'} stars.`,
+             });
+         } catch (error) {
+             console.error("Error in handleAdjustRatingCancel:", error);
+              toast({
+                 title: "Error Moving Item",
+                 description: "Could not move item after cancelling rating adjustment.",
+                 variant: "destructive"
+              });
+         } finally {
+            setIsAdjustRatingModalOpen(false);
+            setRatingAdjustmentProps(null);
+            setDraggingItemId(null);
          }
-
-         const targetCategory = itemToMove.category === 'well' ? 'improve' : 'well';
-
-         // Move the retro item without changing the rating
-         // TODO: Update item category in DB
-         setRetroItems(prev =>
-             prev.map(item =>
-                 item.id === draggingItemId
-                     ? { ...item, category: targetCategory, timestamp: new Date() }
-                     : item
-             )
-         );
-
-         toast({
-             title: "Item Moved",
-             description: `Item moved, but sentiment rating kept at ${ratingAdjustmentProps?.currentRating || 'previous'} stars.`,
-         });
-
-        setIsAdjustRatingModalOpen(false);
-        setRatingAdjustmentProps(null);
-        setDraggingItemId(null);
     }, [draggingItemId, retroItems, toast, ratingAdjustmentProps]);
 
     // --- Logout Handler ---
@@ -828,7 +845,7 @@ function RetroSpectifyPageContent() {
                 responses={pollResponses}
                 onEdit={handleEditPoll} // Only pass if user can edit (user has voted)
                 currentUserHasVoted={!!currentUserResponse} // Let component know if current user voted
-                initiallyOpen={isEditingPoll} // Open if editing
+                initiallyOpen={false} // Always start closed, user clicks to open
             />
          )}
          {!shouldShowPollForm && !currentUserResponse && (
@@ -928,3 +945,4 @@ export default function RetroSpectifyPage() {
         </ProtectedRoute>
     );
 }
+
