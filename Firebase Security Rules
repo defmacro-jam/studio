@@ -1,0 +1,43 @@
+rules_version = '2'; // Use the latest version
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // User Profiles:
+    // - Allow anyone to create (signup)
+    // - Allow authenticated users to read/update their own profile
+    match /users/{userId} {
+      allow create: if request.auth != null; // Allow signup
+      allow read, update: if request.auth != null && request.auth.uid == userId;
+      // Deny delete for now unless needed
+      allow delete: if false;
+    }
+
+    // Teams:
+    // - Allow authenticated users to create teams
+    // - Allow members to read the team document
+    // - Allow the owner to update (e.g., add/remove members, change name)
+    // - Allow the owner to delete the team (consider implications)
+    match /teams/{teamId} {
+      allow create: if request.auth != null;
+      allow read: if request.auth != null && request.auth.uid in resource.data.members;
+      allow update: if request.auth != null && request.auth.uid == resource.data.owner;
+      // Allow delete only by owner - ensure cleanup logic if needed
+      allow delete: if request.auth != null && request.auth.uid == resource.data.owner;
+    }
+
+    // Add rules for other collections (e.g., retroItems, pollResponses) if needed
+    // Example: Allow team members to read/write retro items for their teams
+    // match /teams/{teamId}/retroItems/{itemId} {
+    //   allow read, write: if request.auth != null && get(/databases/$(database)/documents/teams/$(teamId)).data.members.hasAny([request.auth.uid]);
+    // }
+    // match /teams/{teamId}/pollResponses/{responseId} {
+    //   allow read, write: if request.auth != null && get(/databases/$(database)/documents/teams/$(teamId)).data.members.hasAny([request.auth.uid]);
+    // }
+
+     // Default deny for any unspecified paths
+     match /{document=**} {
+       allow read, write: if false;
+     }
+  }
+}
