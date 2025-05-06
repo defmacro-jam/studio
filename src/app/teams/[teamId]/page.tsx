@@ -138,19 +138,37 @@ function TeamPageContent() {
                if (foundMember) return foundMember;
 
                 // Handle case where user document wasn't found (or fetch failed)
-               console.warn(`User data not found for UID: ${uid}. Using placeholder.`);
+               console.warn(`User data not found for UID: ${uid}. This user might not exist or there was a fetch error.`);
                const fallbackEmail = `${uid}@unknown.invalid`; // Use a clearly invalid domain
                const role = teamData.memberRoles[uid] || TEAM_ROLES.MEMBER; // Still assign role
 
+                // Avoid adding the 'Unknown User' placeholder if it represents the current user
+                // This indicates the current user's document might be missing or incomplete
+                if (uid === currentUser?.uid) {
+                    console.error(`Critical: Current user's data (UID: ${uid}) not found in Firestore 'users' collection. Ensure the user document exists.`);
+                     setError("Could not load your user details. Please check your account or contact support.");
+                     // Return a slightly different placeholder or null/undefined if you want to filter it out later
+                     return {
+                         id: uid,
+                         uid: uid,
+                         email: currentUser?.email || fallbackEmail, // Try to use auth email
+                         name: 'Your User Data Missing!',
+                         avatarUrl: getGravatarUrl(currentUser?.email || fallbackEmail, 96)!,
+                         teamRole: role,
+                     };
+                }
+
+                // Return placeholder for other missing users
                 return {
                     id: uid,
                     uid: uid,
                     email: fallbackEmail,
-                    name: 'Unknown User (Not Found)', // Make placeholder clearer
+                    name: 'Unknown User (Data Missing)', // Make placeholder clearer
                     avatarUrl: getGravatarUrl(fallbackEmail, 96)!, // Gravatar for placeholder
                     teamRole: role, // Assign role
                 };
-           });
+           }).filter(member => member !== null) as MemberDisplayInfo[]; // Filter out nulls if you choose to return null for current user error
+
 
            // Sort members: Owner first, then Manager, then Scrum Master (if applicable), then alphabetically by name
            const scrumMasterUid = teamData.scrumMasterUid;
@@ -181,7 +199,7 @@ function TeamPageContent() {
        } finally {
            setLoadingMembers(false);
        }
-   }, [teamData, toast]); // Depend on teamData
+   }, [teamData, currentUser, toast, setError]); // Depend on teamData, currentUser, toast, setError
 
   useEffect(() => {
       if(currentUser && teamId) {
@@ -230,19 +248,16 @@ function TeamPageContent() {
 
         if (querySnapshot.empty) {
             // --- User Does Not Exist ---
-            // Option A: Inform the inviter the user needs to sign up first.
+            // Inform the inviter that the user needs to sign up first.
+            // Sending emails directly from the client-side is generally not recommended
+            // due to security risks and complexity (requires backend/functions).
             setInviteError(`User with email ${emailToInvite} not found. Please ask them to sign up for RetroSpectify first.`);
             toast({
                 title: 'User Not Found',
-                description: `Ask ${emailToInvite} to sign up before inviting them.`,
+                description: `Ask ${emailToInvite} to sign up before inviting them. Email invitations for non-users are not currently supported.`,
                 variant: 'default',
                 duration: 7000
             });
-
-            // Option B (Future): Send an email invitation using Firebase Auth action links or Cloud Functions + Email service.
-            // This is significantly more complex and requires backend logic.
-            // console.log(`TODO: Implement sending invitation email to non-existent user: ${emailToInvite}`);
-            // For now, just show the error.
 
             setIsInviting(false);
             return;
@@ -277,9 +292,8 @@ function TeamPageContent() {
         await batch.commit();
 
 
-      // TODO (Low priority): Implement sending an actual email notification *to the existing user* that they've been added.
-      // This could be done via Cloud Functions triggered by the Firestore update.
-      console.log(`User ${userId} added to team ${teamData.id}.`);
+      // Log that user was added (email notification not implemented)
+      console.log(`User ${userId} (${userData.email}) added to team ${teamData.id}. (Email notification not sent)`);
 
       toast({
         title: 'Member Added',
@@ -523,7 +537,7 @@ function TeamPageContent() {
                             <SelectItem value="none">-- Clear Assignment --</SelectItem>
                             {/* Populate dropdown only with valid members */}
                             {teamMembers
-                                .filter(member => !member.name.includes('Not Found')) // Exclude placeholder users
+                                .filter(member => !member.name.includes('Missing')) // Exclude placeholder/error users
                                 .map(member => (
                                     <SelectItem key={member.uid} value={member.uid}>
                                         {member.name} ({member.email})
