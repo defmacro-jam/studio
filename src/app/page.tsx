@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useMemo, useCallback, type DragEvent } from 'react';
 import { useRouter } from 'next/navigation'; // Import useRouter
+import Link from 'next/link'; // Import Link
 import { signOut } from 'firebase/auth'; // Import signOut
 import { doc, getDoc } from 'firebase/firestore'; // Import Firestore functions
 import type { RetroItem, PollResponse, User, Category } from '@/lib/types';
@@ -19,7 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardHeader, CardContent, CardFooter, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button'; // Import Button
-import { LogOut } from 'lucide-react'; // Import LogOut icon
+import { LogOut, Users } from 'lucide-react'; // Import LogOut and Users icons
 import ProtectedRoute from '@/components/auth/ProtectedRoute'; // Import ProtectedRoute
 import { useAuth } from '@/context/AuthContext'; // Import useAuth
 import { auth, db } from '@/lib/firebase'; // Import auth and db
@@ -663,6 +664,8 @@ function RetroSpectifyPageContent() {
         try {
             if (!currentUserResponse || !appUser) {
                  console.error("Cannot confirm rating adjustment: Missing context.");
+                 setIsAdjustRatingModalOpen(false); // Close modal even if error
+                 setRatingAdjustmentProps(null);
                  return;
             }
 
@@ -697,11 +700,18 @@ function RetroSpectifyPageContent() {
     // Handler for AdjustRatingModal cancellation
     const handleAdjustRatingCancel = useCallback(() => {
          try {
-             // Item move is already done in handleMoveItem. Just show feedback about keeping the rating.
-             toast({
-                 title: "Item Moved, Rating Unchanged",
-                 description: `Item moved, but sentiment rating kept at ${ratingAdjustmentProps?.currentRating || 'previous'} stars.`,
-             });
+             if (ratingAdjustmentProps) { // Check if props exist before accessing
+                 toast({
+                     title: "Item Moved, Rating Unchanged",
+                     description: `Item moved, but sentiment rating kept at ${ratingAdjustmentProps.currentRating} stars.`,
+                 });
+             } else {
+                 // Fallback if props are somehow null
+                 toast({
+                      title: "Item Moved, Rating Unchanged",
+                      description: `Item moved, sentiment rating kept at previous value.`,
+                  });
+             }
          } catch (error) {
              console.error("Error in handleAdjustRatingCancel:", error);
               toast({
@@ -714,7 +724,7 @@ function RetroSpectifyPageContent() {
             setRatingAdjustmentProps(null);
              // Item is already moved
          }
-    }, [toast, ratingAdjustmentProps]); // Removed dependency on draggingItemId and retroItems
+    }, [toast, ratingAdjustmentProps]); // Depend on ratingAdjustmentProps
 
     // --- Logout Handler ---
     const handleLogout = async () => {
@@ -742,7 +752,10 @@ function RetroSpectifyPageContent() {
       <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
         <header className="mb-8 flex justify-between items-center">
              <h1 className="text-3xl font-bold text-primary">RetroSpectify</h1>
-             <Skeleton className="h-10 w-24 rounded-md" /> {/* Skeleton for user/logout */}
+             <div className="flex items-center space-x-3">
+                  <Skeleton className="h-10 w-24 rounded-md" /> {/* Skeleton for Teams button */}
+                  <Skeleton className="h-10 w-24 rounded-md" /> {/* Skeleton for user/logout */}
+             </div>
         </header>
          <div className="mb-6">
              <Skeleton className="h-48 w-full rounded-lg" />
@@ -771,9 +784,15 @@ function RetroSpectifyPageContent() {
 
   return (
     <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
-        <header className="mb-8 flex justify-between items-center">
+        <header className="mb-8 flex justify-between items-center flex-wrap gap-4">
             <h1 className="text-3xl font-bold text-primary">RetroSpectify</h1>
             <div className="flex items-center space-x-3">
+                 {/* Link to Team Creation or a Team Dashboard */}
+                 <Link href="/teams/create" passHref>
+                     <Button variant="outline" size="sm">
+                         <Users className="mr-2 h-4 w-4" /> Create / View Teams
+                     </Button>
+                 </Link>
                 <span className="text-sm font-medium hidden sm:inline">{appUser.name} {appUser.role === 'admin' && '(Admin)'}</span>
                 <Avatar>
                     <AvatarImage src={appUser.avatarUrl} alt={appUser.name} data-ai-hint="avatar profile picture"/>
@@ -801,6 +820,7 @@ function RetroSpectifyPageContent() {
                 responses={pollResponses}
                 onEdit={handleEditPoll} // Only pass if user can edit (user has voted)
                 currentUserHasVoted={!!currentUserResponse} // Let component know if current user voted
+                onCancelEdit={handleCancelEditPoll} // Pass cancel handler to results section
             />
          )}
          {!shouldShowPollForm && !currentUserResponse && (
@@ -900,3 +920,4 @@ export default function RetroSpectifyPage() {
         </ProtectedRoute>
     );
 }
+
