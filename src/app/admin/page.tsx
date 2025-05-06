@@ -1,16 +1,19 @@
 
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { collection, getDocs, doc, updateDoc, writeBatch, getDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input'; // Import Input
+import { Label } from '@/components/ui/label'; // Import Label
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'; // Import Dialog components
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, UserCog, UserX, ArrowLeft, ShieldCheck, Users, ShieldAlert, Trash2 } from 'lucide-react'; // Added ShieldAlert, Trash2
+import { Loader2, UserCog, UserX, ArrowLeft, ShieldCheck, Users, ShieldAlert, Trash2, Pencil, Save, X as CancelIcon } from 'lucide-react'; // Added Pencil, Save, CancelIcon
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -18,6 +21,95 @@ import { getGravatarUrl } from '@/lib/utils';
 import type { AdminUserDisplay, AppRole } from '@/lib/types'; // Import AdminUserDisplay type
 import { APP_ROLES } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+
+// Dialog component for editing user display name
+function EditUserDialog({
+  user,
+  isOpen,
+  onClose,
+  onSave,
+}: {
+  user: AdminUserDisplay | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (userId: string, newName: string) => Promise<void>;
+}) {
+  const [editedName, setEditedName] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      setEditedName(user.name);
+    }
+  }, [user]);
+
+  const handleSave = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!user || !editedName.trim() || editedName.trim() === user.name) {
+      onClose(); // Close if no change or invalid
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await onSave(user.id, editedName.trim());
+      // onClose will be called by the parent on successful save
+    } catch (error) {
+       // Error handling is done in the parent's onSave function
+       console.error("Error saving user name:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (!user) return null;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit User Display Name</DialogTitle>
+          <DialogDescription>
+             Change the display name for {user.email}. Email cannot be changed here.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSave}>
+            <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="email-display" className="text-right">
+                Email
+                </Label>
+                <Input id="email-display" value={user.email} disabled className="col-span-3" />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="name" className="text-right">
+                Display Name
+                </Label>
+                <Input
+                id="name"
+                value={editedName}
+                onChange={(e) => setEditedName(e.target.value)}
+                className="col-span-3"
+                disabled={isSaving}
+                required
+                maxLength={50}
+                />
+            </div>
+            </div>
+            <DialogFooter>
+                <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>
+                    <CancelIcon className="mr-2 h-4 w-4" /> Cancel
+                </Button>
+                <Button type="submit" disabled={isSaving || !editedName.trim() || editedName.trim() === user.name}>
+                    {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    Save Changes
+                </Button>
+            </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 
 function AdminPageContent() {
   const { currentUser, loading: authLoading } = useAuth();
@@ -30,6 +122,10 @@ function AdminPageContent() {
   const [isDeletingUser, setIsDeletingUser] = useState<string | null>(null); // Track user deletion UID
   const [error, setError] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null); // State to track if current user is admin
+
+  // State for edit modal
+  const [editingUser, setEditingUser] = useState<AdminUserDisplay | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   // Check current user's role
   useEffect(() => {
@@ -152,11 +248,55 @@ function AdminPageContent() {
     }
   };
 
+   // Function to update a user's display name (called from the dialog)
+   const handleUpdateDisplayName = async (userId: string, newName: string) => {
+       if (isAdmin !== true || userId === currentUser?.uid) {
+           toast({ title: "Permission Denied", description: "You cannot change another user's name without admin privileges.", variant: "destructive" });
+           throw new Error("Permission Denied"); // Throw error to be caught by dialog
+       }
+
+       const userToUpdate = users.find(u => u.id === userId);
+       if (!userToUpdate || userToUpdate.name === newName) {
+           setIsEditModalOpen(false); // Close modal if no change
+           return;
+       }
+
+       try {
+           const userDocRef = doc(db, 'users', userId);
+           await updateDoc(userDocRef, {
+               displayName: newName
+           });
+
+           toast({
+               title: "Display Name Updated",
+               description: `User's display name updated to ${newName}.`,
+           });
+
+           // Refresh user list locally
+           setUsers(prevUsers => prevUsers.map(u => u.id === userId ? { ...u, name: newName } : u));
+           setIsEditModalOpen(false); // Close modal on success
+
+       } catch (err: any) {
+           console.error("Error updating display name:", err);
+           toast({ title: "Update Failed", description: "Could not update display name.", variant: "destructive" });
+           throw err; // Rethrow error to keep the dialog open if save failed
+       }
+   };
+
+   // Function to open the edit dialog
+   const openEditModal = (user: AdminUserDisplay) => {
+     setEditingUser(user);
+     setIsEditModalOpen(true);
+   };
+
+   // Function to close the edit dialog
+   const closeEditModal = () => {
+     setEditingUser(null);
+     setIsEditModalOpen(false);
+   };
+
+
    // Function to delete a user (use with extreme caution!)
-   // This is a basic implementation. A real-world scenario might involve:
-   // - Deleting associated data (e.g., their posts, poll responses) - requires Cloud Functions.
-   // - Transferring ownership of teams if they are owners.
-   // - Potentially disabling the user in Firebase Auth instead of deleting the Firestore doc.
    const handleDeleteUser = async (userId: string, userName: string) => {
         if (isAdmin !== true || userId === currentUser?.uid) {
             toast({ title: "Action Not Allowed", description: "You cannot delete yourself or lack admin privileges.", variant: "destructive" });
@@ -224,8 +364,9 @@ function AdminPageContent() {
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        <Skeleton className="h-9 w-28" />
-                        <Skeleton className="h-9 w-9" />
+                        <Skeleton className="h-9 w-24" /> {/* Edit Button Placeholder */}
+                        <Skeleton className="h-9 w-28" /> {/* Role Select Placeholder */}
+                        <Skeleton className="h-9 w-9" /> {/* Delete Button Placeholder */}
                     </div>
                 </div>
              ))}
@@ -306,8 +447,22 @@ function AdminPageContent() {
                                   </div>
                               </div>
 
-                              {/* Actions: Change Role, Delete User */}
+                              {/* Actions: Edit Name, Change Role, Delete User */}
                               <div className="flex items-center gap-2 flex-shrink-0">
+                                    {/* Edit Name Button (Cannot edit own name here) */}
+                                    {user.id !== currentUser?.uid && (
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-9 px-2"
+                                            onClick={() => openEditModal(user)}
+                                            disabled={isUpdatingRole === user.id || isDeletingUser === user.id}
+                                        >
+                                            <Pencil className="h-4 w-4" />
+                                            <span className="ml-1 hidden sm:inline">Edit</span>
+                                        </Button>
+                                    )}
+
                                   {/* Role Update Dropdown (Cannot change own role) */}
                                   {user.id !== currentUser?.uid && (
                                        <Select
@@ -379,6 +534,14 @@ function AdminPageContent() {
        {error && !loadingUsers && isAdmin === true && ( // Only show main error if admin check passed but user fetch failed
            <p className="text-sm text-destructive mt-4 text-center">{error}</p>
        )}
+
+        {/* Edit User Dialog */}
+        <EditUserDialog
+            user={editingUser}
+            isOpen={isEditModalOpen}
+            onClose={closeEditModal}
+            onSave={handleUpdateDisplayName}
+        />
     </div>
   );
 }
