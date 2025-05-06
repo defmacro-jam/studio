@@ -2,114 +2,27 @@
 'use client';
 
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
-import { collection, getDocs, doc, updateDoc, writeBatch, getDoc, deleteDoc } from 'firebase/firestore';
+import { useRouter, useParams } from 'next/navigation';
+import Link from 'next/link'; // Import Link
+import { collection, getDocs, doc, updateDoc, writeBatch, getDoc, deleteDoc, FieldValue } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input'; // Import Input
-import { Label } from '@/components/ui/label'; // Import Label
+// Input and Label removed as inline editing is removed
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'; // Import Dialog components
+// Dialog components removed as modal is removed
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, UserCog, UserX, ArrowLeft, ShieldCheck, Users, ShieldAlert, Trash2, Pencil, Save, X as CancelIcon } from 'lucide-react'; // Added Pencil, Save, CancelIcon
+import { Loader2, UserCog, UserX, ArrowLeft, ShieldCheck, Users, ShieldAlert, Trash2, Eye } from 'lucide-react'; // Removed Pencil, Save, CancelIcon, added Eye
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+// Select components removed as role editing moved
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { getGravatarUrl } from '@/lib/utils';
 import type { AdminUserDisplay, AppRole } from '@/lib/types'; // Import AdminUserDisplay type
 import { APP_ROLES } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 
-// Dialog component for editing user display name
-function EditUserDialog({
-  user,
-  isOpen,
-  onClose,
-  onSave,
-}: {
-  user: AdminUserDisplay | null;
-  isOpen: boolean;
-  onClose: () => void;
-  onSave: (userId: string, newName: string) => Promise<void>;
-}) {
-  const [editedName, setEditedName] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-
-  useEffect(() => {
-    if (user) {
-      setEditedName(user.name);
-    }
-  }, [user]);
-
-  const handleSave = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!user || !editedName.trim() || editedName.trim() === user.name) {
-      onClose(); // Close if no change or invalid
-      return;
-    }
-    setIsSaving(true);
-    try {
-      await onSave(user.id, editedName.trim());
-      // onClose will be called by the parent on successful save
-    } catch (error) {
-       // Error handling is done in the parent's onSave function
-       console.error("Error saving user name:", error);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  if (!user) return null;
-
-  return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Edit User Display Name</DialogTitle>
-          <DialogDescription>
-             Change the display name for {user.email}. Email cannot be changed here.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSave}>
-            <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="email-display" className="text-right">
-                Email
-                </Label>
-                <Input id="email-display" value={user.email} disabled className="col-span-3" />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="name" className="text-right">
-                Display Name
-                </Label>
-                <Input
-                id="name"
-                value={editedName}
-                onChange={(e) => setEditedName(e.target.value)}
-                className="col-span-3"
-                disabled={isSaving}
-                required
-                maxLength={50}
-                />
-            </div>
-            </div>
-            <DialogFooter>
-                <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>
-                    <CancelIcon className="mr-2 h-4 w-4" /> Cancel
-                </Button>
-                <Button type="submit" disabled={isSaving || !editedName.trim() || editedName.trim() === user.name}>
-                    {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    Save Changes
-                </Button>
-            </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
+// EditUserDialog removed as editing moved to detail page
 
 function AdminPageContent() {
   const { currentUser, loading: authLoading } = useAuth();
@@ -118,14 +31,12 @@ function AdminPageContent() {
 
   const [users, setUsers] = useState<AdminUserDisplay[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
-  const [isUpdatingRole, setIsUpdatingRole] = useState<string | null>(null); // Track role update UID
+  // isUpdatingRole state removed
   const [isDeletingUser, setIsDeletingUser] = useState<string | null>(null); // Track user deletion UID
   const [error, setError] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null); // State to track if current user is admin
 
-  // State for edit modal
-  const [editingUser, setEditingUser] = useState<AdminUserDisplay | null>(null);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  // State for edit modal removed
 
   // Check current user's role
   useEffect(() => {
@@ -216,85 +127,9 @@ function AdminPageContent() {
       }
   }, [isAdmin, fetchAllUsers]);
 
-  // Function to update a user's app-wide role
-  const handleUpdateRole = async (userId: string, newRole: AppRole) => {
-    if (isAdmin !== true || userId === currentUser?.uid) {
-        toast({ title: "Permission Denied", description: "You cannot change your own role or lack admin privileges.", variant: "destructive" });
-      return;
-    }
-
-    const userToUpdate = users.find(u => u.id === userId);
-    if (!userToUpdate || userToUpdate.role === newRole) return; // No change needed
-
-    setIsUpdatingRole(userId);
-    try {
-      const userDocRef = doc(db, 'users', userId);
-      await updateDoc(userDocRef, {
-        role: newRole
-      });
-
-      toast({
-        title: "Role Updated",
-        description: `${userToUpdate.name}'s app-wide role set to ${newRole.charAt(0).toUpperCase() + newRole.slice(1)}.`,
-      });
-      // Refresh user list locally or refetch
-      setUsers(prevUsers => prevUsers.map(u => u.id === userId ? { ...u, role: newRole } : u));
-
-    } catch (err: any) {
-      console.error("Error updating user role:", err);
-       toast({ title: "Update Failed", description: "Could not update user role.", variant: "destructive" });
-    } finally {
-      setIsUpdatingRole(null);
-    }
-  };
-
-   // Function to update a user's display name (called from the dialog)
-   const handleUpdateDisplayName = async (userId: string, newName: string) => {
-       if (isAdmin !== true || userId === currentUser?.uid) {
-           toast({ title: "Permission Denied", description: "You cannot change another user's name without admin privileges.", variant: "destructive" });
-           throw new Error("Permission Denied"); // Throw error to be caught by dialog
-       }
-
-       const userToUpdate = users.find(u => u.id === userId);
-       if (!userToUpdate || userToUpdate.name === newName) {
-           setIsEditModalOpen(false); // Close modal if no change
-           return;
-       }
-
-       try {
-           const userDocRef = doc(db, 'users', userId);
-           await updateDoc(userDocRef, {
-               displayName: newName
-           });
-
-           toast({
-               title: "Display Name Updated",
-               description: `User's display name updated to ${newName}.`,
-           });
-
-           // Refresh user list locally
-           setUsers(prevUsers => prevUsers.map(u => u.id === userId ? { ...u, name: newName } : u));
-           setIsEditModalOpen(false); // Close modal on success
-
-       } catch (err: any) {
-           console.error("Error updating display name:", err);
-           toast({ title: "Update Failed", description: "Could not update display name.", variant: "destructive" });
-           throw err; // Rethrow error to keep the dialog open if save failed
-       }
-   };
-
-   // Function to open the edit dialog
-   const openEditModal = (user: AdminUserDisplay) => {
-     setEditingUser(user);
-     setIsEditModalOpen(true);
-   };
-
-   // Function to close the edit dialog
-   const closeEditModal = () => {
-     setEditingUser(null);
-     setIsEditModalOpen(false);
-   };
-
+  // handleUpdateRole function removed - role update moved to detail page
+  // handleUpdateDisplayName function removed - display name editing moved elsewhere (e.g., /me or detail page)
+  // openEditModal and closeEditModal removed
 
    // Function to delete a user (use with extreme caution!)
    const handleDeleteUser = async (userId: string, userName: string) => {
@@ -364,8 +199,7 @@ function AdminPageContent() {
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        <Skeleton className="h-9 w-24" /> {/* Edit Button Placeholder */}
-                        <Skeleton className="h-9 w-28" /> {/* Role Select Placeholder */}
+                        <Skeleton className="h-9 w-24" /> {/* View Details Button Placeholder */}
                         <Skeleton className="h-9 w-9" /> {/* Delete Button Placeholder */}
                     </div>
                 </div>
@@ -413,7 +247,7 @@ function AdminPageContent() {
       <Card>
           <CardHeader>
               <CardTitle>All Users ({users.length})</CardTitle>
-              <CardDescription>View and manage user roles and status.</CardDescription>
+              <CardDescription>View user details or remove users.</CardDescription>
           </CardHeader>
           <CardContent>
                {users.length === 0 && !loadingUsers ? (
@@ -423,13 +257,13 @@ function AdminPageContent() {
                       {users.map((user) => (
                           <li key={user.id} className="flex items-center justify-between p-3 bg-card border rounded-md hover:bg-secondary/50 transition-colors gap-4 flex-wrap">
                               {/* User Info */}
-                              <div className="flex items-center gap-3 overflow-hidden flex-grow min-w-[200px]">
+                               <Link href={`/admin/users/${user.id}`} className="flex items-center gap-3 overflow-hidden flex-grow min-w-[200px] cursor-pointer group">
                                   <Avatar className="h-10 w-10 flex-shrink-0">
                                       <AvatarImage src={user.avatarUrl} alt={user.name} data-ai-hint="avatar profile picture" />
                                       <AvatarFallback>{(user.name || '?').charAt(0).toUpperCase()}</AvatarFallback>
                                   </Avatar>
                                   <div className="overflow-hidden">
-                                       <span className="font-medium block truncate">{user.name} {user.id === currentUser?.uid && '(You)'}</span>
+                                       <span className="font-medium block truncate group-hover:text-primary">{user.name} {user.id === currentUser?.uid && '(You)'}</span>
                                        {/* App Role Badge */}
                                        <div className="flex items-center text-xs font-semibold mt-0.5">
                                            {user.role === APP_ROLES.ADMIN && (
@@ -445,45 +279,24 @@ function AdminPageContent() {
                                        </div>
                                        <p className="text-xs text-muted-foreground truncate mt-0.5">{user.email}</p>
                                   </div>
-                              </div>
+                              </Link>
 
-                              {/* Actions: Edit Name, Change Role, Delete User */}
+                              {/* Actions: View Details (Implicit via Link), Delete User */}
                               <div className="flex items-center gap-2 flex-shrink-0">
-                                    {/* Edit Name Button (Cannot edit own name here) */}
-                                    {user.id !== currentUser?.uid && (
+                                    {/* View Details Button (Alternative/Redundant to Link) */}
+                                    <Link href={`/admin/users/${user.id}`} passHref>
                                         <Button
                                             variant="outline"
                                             size="sm"
                                             className="h-9 px-2"
-                                            onClick={() => openEditModal(user)}
-                                            disabled={isUpdatingRole === user.id || isDeletingUser === user.id}
+                                            disabled={isDeletingUser === user.id}
+                                            aria-label={`View details for ${user.name}`}
                                         >
-                                            <Pencil className="h-4 w-4" />
-                                            <span className="ml-1 hidden sm:inline">Edit</span>
+                                            <Eye className="h-4 w-4" />
+                                            <span className="ml-1 hidden sm:inline">Details</span>
                                         </Button>
-                                    )}
+                                    </Link>
 
-                                  {/* Role Update Dropdown (Cannot change own role) */}
-                                  {user.id !== currentUser?.uid && (
-                                       <Select
-                                           value={user.role}
-                                           onValueChange={(newRole) => handleUpdateRole(user.id, newRole as AppRole)}
-                                           disabled={isUpdatingRole === user.id || isDeletingUser === user.id}
-                                       >
-                                          <SelectTrigger className="w-[120px] h-9 text-xs">
-                                              <SelectValue placeholder="Change role" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                              {/* Iterate over APP_ROLES */}
-                                              {Object.values(APP_ROLES).map(role => (
-                                                  <SelectItem key={role} value={role} className="text-xs">
-                                                      {role.charAt(0).toUpperCase() + role.slice(1)}
-                                                  </SelectItem>
-                                              ))}
-                                          </SelectContent>
-                                      </Select>
-                                  )}
-                                  {isUpdatingRole === user.id && <Loader2 className="h-4 w-4 animate-spin" />}
 
                                   {/* Delete Button (Cannot delete self) */}
                                   {user.id !== currentUser?.uid && (
@@ -493,7 +306,7 @@ function AdminPageContent() {
                                                     variant="ghost"
                                                     size="sm"
                                                     className="text-destructive hover:bg-destructive/10 hover:text-destructive h-9 px-2"
-                                                    disabled={isDeletingUser === user.id || isUpdatingRole === user.id}
+                                                    disabled={isDeletingUser === user.id}
                                                     aria-label={`Delete ${user.name}`}
                                                 >
                                                     {isDeletingUser === user.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
@@ -512,7 +325,12 @@ function AdminPageContent() {
                                               <AlertDialogFooter>
                                                   <AlertDialogCancel disabled={isDeletingUser === user.id}>Cancel</AlertDialogCancel>
                                                   <AlertDialogAction
-                                                      onClick={() => handleDeleteUser(user.id, user.name)}
+                                                      onClick={(e) => {
+                                                            // Prevent link navigation when clicking delete action within the link area
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            handleDeleteUser(user.id, user.name);
+                                                        }}
                                                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                                       disabled={isDeletingUser === user.id}
                                                    >
@@ -535,13 +353,7 @@ function AdminPageContent() {
            <p className="text-sm text-destructive mt-4 text-center">{error}</p>
        )}
 
-        {/* Edit User Dialog */}
-        <EditUserDialog
-            user={editingUser}
-            isOpen={isEditModalOpen}
-            onClose={closeEditModal}
-            onSave={handleUpdateDisplayName}
-        />
+        {/* Edit User Dialog Removed */}
     </div>
   );
 }
