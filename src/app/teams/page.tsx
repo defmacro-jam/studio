@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { collection, query, where, getDocs, doc, getDoc, writeBatch, FieldValue, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, writeBatch, deleteDoc } from 'firebase/firestore'; // Removed FieldValue
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -11,9 +11,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Skeleton } from '@/components/ui/skeleton';
 import { Loader2, PlusCircle, Users, ArrowRight, Trash2, Home } from 'lucide-react'; // Added Home icon
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import type { Team as TeamData } from '@/lib/types';
+import type { Team as TeamData, User as AppUser } from '@/lib/types'; // Added AppUser
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from '@/hooks/use-toast'; // Import useToast
+import { APP_ROLES } from '@/lib/types'; // Import APP_ROLES
 
 // Updated interface to include owner UID
 interface TeamInfo extends Pick<TeamData, 'id' | 'name' | 'owner'> {
@@ -27,6 +28,26 @@ function TeamsListPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [deletingTeamId, setDeletingTeamId] = useState<string | null>(null); // State for loading indicator on delete button
   const { toast } = useToast(); // Initialize toast
+  const [appUser, setAppUser] = useState<AppUser | null>(null); // State for current app user details
+
+  // Fetch current user's full data (including role)
+  useEffect(() => {
+    const fetchAppUser = async () => {
+      if (currentUser) {
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        const userDocSnap = await getDoc(userDocRef);
+        if (userDocSnap.exists()) {
+          setAppUser({ id: userDocSnap.id, ...userDocSnap.data() } as AppUser);
+        } else {
+          console.warn("Current user document not found in Firestore.");
+          // Handle case where user doc might not exist yet or there's an issue
+          // For now, we'll allow proceeding, but features depending on appUser.role might be affected
+        }
+      }
+    };
+    fetchAppUser();
+  }, [currentUser]);
+
 
   const fetchTeams = useCallback(async () => {
     if (!currentUser) {
@@ -48,7 +69,7 @@ function TeamsListPageContent() {
       }
 
       const userData = userDocSnap.data();
-      const teamIds = userData?.teams || []; // Ensure userData exists before accessing teams
+      const teamIds = userData?.teamIds || userData?.teams || []; // Check for both teamIds and teams for backward compatibility
 
       if (teamIds.length === 0) {
         setTeams([]);
@@ -117,28 +138,23 @@ function TeamsListPageContent() {
        const batch = writeBatch(db);
        const teamDocRef = doc(db, 'teams', teamId);
 
-        // Note: Removing teamId from all member's user documents requires fetching all members first.
-        // This can be complex and might hit batch limits if the team is large.
-        // For simplicity here, we'll only delete the team document.
-        // A more robust solution might use a Cloud Function triggered on team delete.
-
-        // Fetch team members to update their documents (simplified version, may need optimization for large teams)
+        // Fetch team members to update their documents
         const teamDocSnap = await getDoc(teamDocRef);
         if (teamDocSnap.exists()) {
             const teamData = teamDocSnap.data() as TeamData;
             const memberUids = teamData.members || [];
 
-            // Update each member's user document
-            memberUids.forEach(uid => {
+            // Update each member's user document by removing the teamId from their 'teamIds' (or 'teams') array
+            // This requires a read for each user doc then an update, consider Cloud Function for large teams
+            for (const uid of memberUids) {
                 const userDocRef = doc(db, 'users', uid);
-                // Atomically remove the teamId from the user's 'teams' array
-                 // We need to import FieldValue for arrayRemove
-                 // For now, just log this step as full implementation is complex client-side
-                console.log(`TODO: Remove team ${teamId} from user ${uid}'s teams array.`);
-                 // Example using FieldValue (requires import):
-                 // import { FieldValue } from 'firebase/firestore';
-                 // batch.update(userDocRef, { teams: FieldValue.arrayRemove(teamId) });
-            });
+                const userDocSnap = await getDoc(userDocRef);
+                if (userDocSnap.exists()) {
+                    const currentTeams = userDocSnap.data().teamIds || userDocSnap.data().teams || [];
+                    const updatedTeams = currentTeams.filter((id: string) => id !== teamId);
+                    batch.update(userDocRef, { teamIds: updatedTeams }); // Standardize on teamIds
+                }
+            }
         } else {
              throw new Error("Team document not found during deletion process.");
         }
@@ -180,11 +196,13 @@ function TeamsListPageContent() {
         <h1 className="text-3xl font-bold text-primary flex items-center">
           <Users className="mr-3 h-7 w-7" /> Your Teams
         </h1>
-        <Link href="/teams/create" passHref>
-          <Button>
-            <PlusCircle className="mr-2 h-5 w-5" /> Create New Team
-          </Button>
-        </Link>
+        {appUser?.role === APP_ROLES.ADMIN && ( // Only show Create Team button if user is admin
+          <Link href="/teams/create" passHref>
+            <Button>
+              <PlusCircle className="mr-2 h-5 w-5" /> Create New Team
+            </Button>
+          </Link>
+        )}
       </header>
 
       {loading && (
@@ -219,14 +237,20 @@ function TeamsListPageContent() {
         <Card className="text-center py-10">
           <CardHeader>
             <CardTitle>No Teams Yet!</CardTitle>
-            <CardDescription>You haven't joined or created any teams.</CardDescription>
+            <CardDescription>
+              {appUser?.role === APP_ROLES.ADMIN
+                ? "You haven't created any teams yet."
+                : "You haven't joined any teams yet. Contact an administrator or team owner."}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <Link href="/teams/create" passHref>
-              <Button size="lg">
-                <PlusCircle className="mr-2 h-5 w-5" /> Create Your First Team
-              </Button>
-            </Link>
+            {appUser?.role === APP_ROLES.ADMIN && (
+              <Link href="/teams/create" passHref>
+                <Button size="lg">
+                  <PlusCircle className="mr-2 h-5 w-5" /> Create Your First Team
+                </Button>
+              </Link>
+            )}
           </CardContent>
         </Card>
       )}
@@ -267,8 +291,7 @@ function TeamsListPageContent() {
                              <AlertDialogHeader>
                                  <AlertDialogTitle>Confirm Deletion</AlertDialogTitle>
                                  <AlertDialogDescription>
-                                     Are you sure you want to delete the team "<span className="font-medium">{team.name}</span>"? This action cannot be undone. All team data will be lost.
-                                     {/* Optional: Add warning about members losing access */}
+                                     Are you sure you want to delete the team "<span className="font-medium">{team.name}</span>"? This action cannot be undone. All team data will be lost and members removed from the team.
                                  </AlertDialogDescription>
                              </AlertDialogHeader>
                              <AlertDialogFooter>

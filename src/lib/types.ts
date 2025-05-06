@@ -28,7 +28,7 @@ export interface User {
   email: string; // Email is required for Gravatar
   avatarUrl: string; // Gravatar URL or a fallback URL
   role: AppRole; // App-wide role ('admin' or 'member')
-  // teamIds?: string[]; // Consider adding if needed for direct lookups, but often fetched via teams collection
+  teamIds?: string[]; // Array of team IDs the user belongs to
 }
 
 export interface RetroItem {

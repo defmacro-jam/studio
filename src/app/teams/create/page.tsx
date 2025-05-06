@@ -12,9 +12,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Users, X as CancelIcon } from 'lucide-react'; // Added CancelIcon
+import { Loader2, Users, X as CancelIcon, ShieldAlert } from 'lucide-react'; // Added CancelIcon, ShieldAlert
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import { TEAM_ROLES } from '@/lib/types'; // Import roles
+import { TEAM_ROLES, APP_ROLES, type User as AppUser } from '@/lib/types'; // Import roles and AppUser
 
 function CreateTeamPageContent() {
   const [teamName, setTeamName] = useState('');
@@ -24,18 +24,39 @@ function CreateTeamPageContent() {
   const { currentUser } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
+  const [appUser, setAppUser] = useState<AppUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+    // Fetch current user's full data (including role)
+    useEffect(() => {
+        const fetchAppUser = async () => {
+            if (currentUser) {
+                const userDocRef = doc(db, 'users', currentUser.uid);
+                const userDocSnap = await getDoc(userDocRef);
+                if (userDocSnap.exists()) {
+                    setAppUser({ id: userDocSnap.id, ...userDocSnap.data() } as AppUser);
+                } else {
+                    console.warn("Current user document not found in Firestore for role check.");
+                    toast({ title: "Error", description: "Could not verify user role.", variant: "destructive" });
+                    router.push('/'); // Redirect if user data can't be fetched
+                }
+            }
+            setAuthChecked(true);
+        };
+        fetchAppUser();
+    }, [currentUser, router, toast]);
 
     // Fetch existing team names for the current user
     useEffect(() => {
         const fetchExistingTeams = async () => {
-            if (!currentUser) return;
+            if (!currentUser || !appUser || appUser.role !== APP_ROLES.ADMIN) return; // Only admins can create, no need for others to check names
             setLoading(true); // Indicate loading while fetching existing names
             try {
                  const userDocRef = doc(db, 'users', currentUser.uid);
                  const userDocSnap = await getDoc(userDocRef);
                  if (userDocSnap.exists()) {
                      const userData = userDocSnap.data();
-                     const teamIds = userData.teams || [];
+                     const teamIds = userData.teamIds || userData.teams || []; // Use teamIds
                      if (teamIds.length > 0) {
                          // Fetch names of teams user is already in
                          const teamsQuery = query(collection(db, 'teams'), where(documentId(), 'in', teamIds));
@@ -46,21 +67,29 @@ function CreateTeamPageContent() {
                  }
             } catch (err) {
                  console.error("Error fetching existing team names:", err);
-                 // Optionally show a toast if fetching names fails
-                 // toast({ title: "Warning", description: "Could not check for existing team names.", variant: "default" });
             } finally {
                  setLoading(false); // Done loading existing names
             }
         };
-        fetchExistingTeams();
-    }, [currentUser]);
+        if (authChecked) { // Ensure auth state is resolved before fetching
+            fetchExistingTeams();
+        }
+    }, [currentUser, appUser, authChecked]);
+
+    // Redirect if not admin
+    useEffect(() => {
+        if (authChecked && appUser && appUser.role !== APP_ROLES.ADMIN) {
+            toast({ title: "Access Denied", description: "Only administrators can create teams.", variant: "destructive" });
+            router.push('/');
+        }
+    }, [authChecked, appUser, router, toast]);
 
 
   const handleCreateTeam = async (e: FormEvent) => {
     e.preventDefault();
-    if (!currentUser) {
-      setError('You must be logged in to create a team.');
-      toast({ title: 'Authentication Required', description: 'Please log in.', variant: 'destructive' });
+    if (!currentUser || !appUser || appUser.role !== APP_ROLES.ADMIN) { // Double check admin role
+      setError('You must be an administrator to create a team.');
+      toast({ title: 'Permission Denied', description: 'Only administrators can create teams.', variant: 'destructive' });
       return;
     }
     const trimmedTeamName = teamName.trim();
@@ -70,10 +99,13 @@ function CreateTeamPageContent() {
         return;
     }
 
-     // Check for duplicate team name (case-insensitive)
-     if (existingTeamNames.includes(trimmedTeamName.toLowerCase())) {
-         setError(`You are already in a team named "${trimmedTeamName}".`);
-         toast({ title: 'Duplicate Name', description: `A team with this name already exists in your list.`, variant: 'destructive' });
+     // Check for duplicate team name (case-insensitive) - Note: This checks ALL teams, not just user's teams if user is Admin
+     // Consider if this check should be more sophisticated for admins (e.g., global uniqueness)
+     const allTeamsQuery = query(collection(db, 'teams'), where('name', '==', trimmedTeamName));
+     const existingTeamsSnapshot = await getDocs(allTeamsQuery);
+     if (!existingTeamsSnapshot.empty) {
+         setError(`A team named "${trimmedTeamName}" already exists.`);
+         toast({ title: 'Duplicate Name', description: `A team with this name already exists.`, variant: 'destructive' });
          return;
      }
 
@@ -103,7 +135,7 @@ function CreateTeamPageContent() {
         // 3. Update the creator's user document to include the new team ID within the batch
         const userDocRef = doc(db, 'users', currentUser.uid);
         batch.update(userDocRef, {
-            teams: arrayUnion(teamDocRef.id), // Add the new team's ID to the user's list of teams
+            teamIds: arrayUnion(teamDocRef.id), // Standardize on teamIds
         });
 
         // 4. Commit the batch transaction
@@ -133,6 +165,25 @@ function CreateTeamPageContent() {
     }
   };
 
+  if (!authChecked || (authChecked && appUser && appUser.role !== APP_ROLES.ADMIN)) {
+    return (
+        <div className="flex items-center justify-center min-h-screen p-4">
+            <Card className="w-full max-w-md shadow-xl bg-destructive/10 border-destructive">
+                <CardHeader>
+                    <CardTitle className="text-destructive flex items-center"><ShieldAlert className="mr-2 h-5 w-5"/> Access Denied</CardTitle>
+                </CardHeader>
+                <CardContent>
+                     <p className="text-destructive-foreground">Only administrators can create new teams.</p>
+                </CardContent>
+                <CardFooter>
+                     <Button variant="secondary" onClick={() => router.push('/')}>Go Home</Button>
+                </CardFooter>
+            </Card>
+        </div>
+    );
+  }
+
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-secondary">
       <Card className="w-full max-w-md shadow-xl">
@@ -151,14 +202,7 @@ function CreateTeamPageContent() {
                 value={teamName}
                 onChange={(e) => {
                     setTeamName(e.target.value);
-                    // Clear error when user types
                     if (error) setError(null);
-                    // Check for duplicates dynamically (optional, can be noisy)
-                    // if (existingTeamNames.includes(e.target.value.trim().toLowerCase())) {
-                    //     setError(`You are already in a team named "${e.target.value.trim()}".`);
-                    // } else {
-                    //     setError(null);
-                    // }
                 }}
                 required
                 disabled={loading}
@@ -182,7 +226,7 @@ function CreateTeamPageContent() {
             <Button
                 type="submit"
                 className="w-full sm:w-auto flex-grow" // Adjust width and allow growth
-                disabled={loading || !teamName.trim() || existingTeamNames.includes(teamName.trim().toLowerCase())} // Disable if name exists
+                disabled={loading || !teamName.trim()}
             >
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Users className="mr-2 h-4 w-4"/>}
               {loading ? 'Creating Team...' : 'Create Team'}

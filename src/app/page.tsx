@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'; // Import useRouter
 import Link from 'next/link'; // Import Link
 import { signOut } from 'firebase/auth'; // Import signOut
 import { doc, getDoc } from 'firebase/firestore'; // Import Firestore functions
-import type { RetroItem, PollResponse, User, Category } from '@/lib/types';
+import type { RetroItem, PollResponse, User, Category, AppRole } from '@/lib/types'; // Added AppRole
 import { PollSection } from '@/components/retrospectify/PollSection';
 import { PollResultsSection } from '@/components/retrospectify/PollResultsSection';
 import { RetroSection } from '@/components/retrospectify/RetroSection';
@@ -18,9 +18,9 @@ import { Toaster } from '@/components/ui/toaster';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Card, CardHeader, CardContent, CardFooter, CardDescription } from '@/components/ui/card';
+import { Card, CardHeader, CardContent, CardFooter, CardDescription, CardTitle } from '@/components/ui/card'; // Added CardTitle
 import { Button } from '@/components/ui/button'; // Import Button
-import { Users, LogOut, ShieldCheck } from 'lucide-react'; // Import Users, LogOut and ShieldCheck icons
+import { Users, LogOut, ShieldCheck, Info } from 'lucide-react'; // Import Users, LogOut, ShieldCheck, Info icons
 import ProtectedRoute from '@/components/auth/ProtectedRoute'; // Import ProtectedRoute
 import { useAuth } from '@/context/AuthContext'; // Import useAuth
 import { auth, db } from '@/lib/firebase'; // Import auth and db
@@ -38,6 +38,7 @@ const generateMockUser = (id: string, name: string, emailSuffix: string, appRole
         email: email,
         avatarUrl: getGravatarUrl(email, 100)!, // Use Gravatar, assuming it won't be null
         role: appRole, // Use app-wide role
+        teamIds: [], // Initialize with empty teams
     };
 };
 
@@ -110,6 +111,7 @@ function RetroSpectifyPageContent() {
                     // Use avatarUrl from Firestore first, then Auth, then generate Gravatar as fallback
                     avatarUrl: userData.avatarUrl || currentUser.photoURL || getGravatarUrl(currentUser.email, 100)!,
                     role: userData.role || APP_ROLES.MEMBER, // Include app-wide role, default to MEMBER
+                    teamIds: userData.teams || [], // Include teamIds
                  };
            } else {
                // Handle case where user exists in Auth but not Firestore (create basic user object)
@@ -121,6 +123,7 @@ function RetroSpectifyPageContent() {
                   email: fallbackEmail,
                   avatarUrl: currentUser.photoURL || getGravatarUrl(fallbackEmail, 100)!, // Use photoURL or generate Gravatar
                   role: APP_ROLES.MEMBER, // Default app-wide role
+                  teamIds: [], // Default to empty teams
                };
            }
            setAppUser(resolvedUser);
@@ -784,6 +787,9 @@ function RetroSpectifyPageContent() {
     );
   }
 
+  const canInteractWithTeams = appUser.role === APP_ROLES.ADMIN || (appUser.teamIds && appUser.teamIds.length > 0);
+  const canCreateTeam = appUser.role === APP_ROLES.ADMIN;
+  const showTeamsButton = canInteractWithTeams || canCreateTeam; // Show if admin or belongs to teams or can create one
 
   return (
     <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
@@ -791,11 +797,13 @@ function RetroSpectifyPageContent() {
             <h1 className="text-3xl font-bold text-primary">RetroSpectify</h1>
             <div className="flex items-center space-x-3">
                  {/* Link to Team Creation or a Team Dashboard */}
-                 <Link href="/teams" passHref>
-                     <Button variant="outline" size="sm">
-                         <Users className="mr-2 h-4 w-4" /> Teams
-                     </Button>
-                 </Link>
+                 {showTeamsButton && (
+                     <Link href="/teams" passHref>
+                         <Button variant="outline" size="sm">
+                             <Users className="mr-2 h-4 w-4" /> Teams
+                         </Button>
+                     </Link>
+                 )}
                  {/* Link to Admin Dashboard (only for admins) */}
                  {appUser.role === APP_ROLES.ADMIN && (
                      <Link href="/admin" passHref>
@@ -821,100 +829,127 @@ function RetroSpectifyPageContent() {
             </div>
         </header>
 
-      <div className="mb-6 md:mb-8">
-        {shouldShowPollForm && (
-             <PollSection
-                currentUser={appUser}
-                onSubmitPoll={handlePollSubmit}
-                initialRating={isEditingPoll ? currentUserResponse?.rating : 0}
-                initialJustification={isEditingPoll ? currentUserResponse?.justification : ''}
-                isEditing={isEditingPoll}
-                onCancelEdit={handleCancelEditPoll} // Pass the cancel handler
-            />
-        )}
-         {shouldShowResults && ( // Show results container if user has submitted (or is admin?) - controlled by shouldShowResults
-            <PollResultsSection
-                responses={pollResponses}
-                onEdit={handleEditPoll} // Only pass if user can edit (user has voted)
-                currentUserHasVoted={!!currentUserResponse} // Let component know if current user voted
-                onCancelEdit={handleCancelEditPoll} // Pass cancel handler to results section
-            />
-         )}
-         {!shouldShowPollForm && !currentUserResponse && (
-              <Card className="shadow-md border border-input bg-card text-center p-6">
-                  <CardDescription>Submit your sentiment in the poll above to see the team results.</CardDescription>
-              </Card>
-         )}
-      </div>
+        {/* Conditional Rendering based on team membership and admin status */}
+        {canInteractWithTeams ? (
+            <>
+                <div className="mb-6 md:mb-8">
+                    {shouldShowPollForm && (
+                        <PollSection
+                            currentUser={appUser}
+                            onSubmitPoll={handlePollSubmit}
+                            initialRating={isEditingPoll ? currentUserResponse?.rating : 0}
+                            initialJustification={isEditingPoll ? currentUserResponse?.justification : ''}
+                            isEditing={isEditingPoll}
+                            onCancelEdit={handleCancelEditPoll} // Pass the cancel handler
+                        />
+                    )}
+                    {shouldShowResults && ( // Show results container if user has submitted (or is admin?) - controlled by shouldShowResults
+                        <PollResultsSection
+                            responses={pollResponses}
+                            onEdit={handleEditPoll} // Only pass if user can edit (user has voted)
+                            currentUserHasVoted={!!currentUserResponse} // Let component know if current user voted
+                        />
+                    )}
+                    {!shouldShowPollForm && !currentUserResponse && (
+                        <Card className="shadow-md border border-input bg-card text-center p-6">
+                            <CardDescription>Submit your sentiment in the poll above to see the team results.</CardDescription>
+                        </Card>
+                    )}
+                </div>
 
-      {/* Retro Board Sections */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-        <RetroSection
-          title="What Went Well"
-          category="well"
-          items={filterItems('well')}
-          currentUser={appUser}
-          onAddItem={handleAddItem('well')}
-          onAddReply={handleAddReply}
-          onMoveItem={handleMoveItem}
-          onEditItem={handleEditItem} // Pass handler
-          onDeleteItem={handleDeleteItem}
-          allowAddingItems={true}
-          draggingItemId={draggingItemId}
-          onDragStartItem={handleDragStart}
-          onDragEndItem={handleDragEnd}
-          className="bg-teal-50/50 border-teal-200 dark:bg-teal-900/20 dark:border-teal-700/50"
-        />
-        <RetroSection
-          title="What Could Be Improved"
-          category="improve"
-          items={filterItems('improve')}
-          currentUser={appUser}
-          onAddItem={handleAddItem('improve')}
-          onAddReply={handleAddReply}
-          onMoveItem={handleMoveItem}
-          onEditItem={handleEditItem} // Pass handler
-          onDeleteItem={handleDeleteItem}
-          allowAddingItems={true}
-          draggingItemId={draggingItemId}
-          onDragStartItem={handleDragStart}
-          onDragEndItem={handleDragEnd}
-          className="bg-amber-50/50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-700/50"
-        />
-        <RetroSection
-          title="Discussion Topics"
-          category="discuss"
-          items={filterItems('discuss')}
-          currentUser={appUser}
-          onAddItem={handleAddItem('discuss')}
-          onAddReply={handleAddReply}
-          onMoveItem={handleMoveItem}
-          onEditItem={handleEditItem} // Pass handler
-          onDeleteItem={handleDeleteItem}
-          allowAddingItems={true}
-          draggingItemId={draggingItemId}
-          onDragStartItem={handleDragStart}
-          onDragEndItem={handleDragEnd}
-          className="bg-blue-50/50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-700/50"
-        />
-        <RetroSection
-          title="Action Items"
-          category="action"
-          items={filterItems('action')}
-          currentUser={appUser}
-          onAddItem={handleAddItem('action')}
-          onAddReply={handleAddReply}
-          onMoveItem={handleMoveItem}
-          onEditItem={handleEditItem} // Pass handler
-          onDeleteItem={handleDeleteItem}
-          allowAddingItems={true}
-          draggingItemId={draggingItemId}
-          onDragStartItem={handleDragStart}
-          onDragEndItem={handleDragEnd}
-          className="bg-purple-50/50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-700/50"
-          isDropTargetForActionGeneration={true}
-        />
-      </div>
+                {/* Retro Board Sections */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+                    <RetroSection
+                        title="What Went Well"
+                        category="well"
+                        items={filterItems('well')}
+                        currentUser={appUser}
+                        onAddItem={handleAddItem('well')}
+                        onAddReply={handleAddReply}
+                        onMoveItem={handleMoveItem}
+                        onEditItem={handleEditItem} // Pass handler
+                        onDeleteItem={handleDeleteItem}
+                        allowAddingItems={true}
+                        draggingItemId={draggingItemId}
+                        onDragStartItem={handleDragStart}
+                        onDragEndItem={handleDragEnd}
+                        className="bg-teal-50/50 border-teal-200 dark:bg-teal-900/20 dark:border-teal-700/50"
+                    />
+                    <RetroSection
+                        title="What Could Be Improved"
+                        category="improve"
+                        items={filterItems('improve')}
+                        currentUser={appUser}
+                        onAddItem={handleAddItem('improve')}
+                        onAddReply={handleAddReply}
+                        onMoveItem={handleMoveItem}
+                        onEditItem={handleEditItem} // Pass handler
+                        onDeleteItem={handleDeleteItem}
+                        allowAddingItems={true}
+                        draggingItemId={draggingItemId}
+                        onDragStartItem={handleDragStart}
+                        onDragEndItem={handleDragEnd}
+                        className="bg-amber-50/50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-700/50"
+                    />
+                    <RetroSection
+                        title="Discussion Topics"
+                        category="discuss"
+                        items={filterItems('discuss')}
+                        currentUser={appUser}
+                        onAddItem={handleAddItem('discuss')}
+                        onAddReply={handleAddReply}
+                        onMoveItem={handleMoveItem}
+                        onEditItem={handleEditItem} // Pass handler
+                        onDeleteItem={handleDeleteItem}
+                        allowAddingItems={true}
+                        draggingItemId={draggingItemId}
+                        onDragStartItem={handleDragStart}
+                        onDragEndItem={handleDragEnd}
+                        className="bg-blue-50/50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-700/50"
+                    />
+                    <RetroSection
+                        title="Action Items"
+                        category="action"
+                        items={filterItems('action')}
+                        currentUser={appUser}
+                        onAddItem={handleAddItem('action')}
+                        onAddReply={handleAddReply}
+                        onMoveItem={handleMoveItem}
+                        onEditItem={handleEditItem} // Pass handler
+                        onDeleteItem={handleDeleteItem}
+                        allowAddingItems={true}
+                        draggingItemId={draggingItemId}
+                        onDragStartItem={handleDragStart}
+                        onDragEndItem={handleDragEnd}
+                        className="bg-purple-50/50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-700/50"
+                        isDropTargetForActionGeneration={true}
+                    />
+                </div>
+            </>
+        ) : (
+          <Card className="mt-8 shadow-lg border-primary/20 bg-primary/5">
+            <CardHeader>
+              <CardTitle className="text-xl font-semibold text-primary flex items-center">
+                <Info className="mr-3 h-6 w-6" /> Welcome to RetroSpectify!
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-muted-foreground">
+                It looks like you&apos;re not part of any team yet.
+              </p>
+              <p className="text-muted-foreground mt-2">
+                Please contact an administrator or a team owner to be added to a team.
+                Once you&apos;re on a team, you&apos;ll be able to participate in retrospectives.
+              </p>
+              {appUser.role === APP_ROLES.ADMIN && (
+                <p className="text-muted-foreground mt-4">
+                  As an administrator, you can <Link href="/teams/create" className="text-primary hover:underline">create a new team</Link> or manage existing teams and users.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
 
        {ratingAdjustmentProps && isAdjustRatingModalOpen && (
          <AdjustRatingModal
