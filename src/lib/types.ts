@@ -1,6 +1,15 @@
 
 export type Category = 'well' | 'improve' | 'discuss' | 'action';
 
+// Team Roles
+export const TEAM_ROLES = {
+  OWNER: 'owner',
+  MANAGER: 'manager',
+  MEMBER: 'member',
+} as const;
+
+export type TeamRole = typeof TEAM_ROLES[keyof typeof TEAM_ROLES];
+
 // Updated User type to better align with Firebase Auth and app needs
 export interface User {
   id: string; // Corresponds to Firebase UID
@@ -9,7 +18,7 @@ export interface User {
   avatarUrl: string; // Gravatar URL or a fallback URL
   // Add other relevant fields if needed, e.g., from Firestore user document
   // teamIds?: string[];
-  role?: 'admin' | 'member'; // Optional: Add roles for permissions
+  role?: 'admin' | 'member'; // App-level role (optional)
 }
 
 export interface RetroItem {
@@ -32,13 +41,21 @@ export interface PollResponse {
   timestamp: Date; // Consider using Firestore Timestamp type
 }
 
-// Optional: Define Team type if needed elsewhere
+// Updated Team type for team management features
 export interface Team {
     id: string;
     name: string;
     owner: string; // UID of the owner
     members: string[]; // Array of member UIDs
+    memberRoles: { [uid: string]: TeamRole }; // Map UID to team-specific role
+    scrumMasterUid?: string | null; // UID of the current scrum master (optional)
     createdAt: any; // Firestore Timestamp
-    // Add other team-related fields
+    createdBy: string; // UID of the creator
 }
+
+// Type for displaying members on the team page, including their role
+export interface TeamMemberDisplay extends User {
+    teamRole: TeamRole;
+}
+
 

@@ -1,8 +1,9 @@
+
 'use client';
 
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, addDoc, serverTimestamp, doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, arrayUnion, writeBatch } from 'firebase/firestore'; // Import writeBatch
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Users } from 'lucide-react';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import { TEAM_ROLES } from '@/lib/types'; // Import roles
 
 function CreateTeamPageContent() {
   const [teamName, setTeamName] = useState('');
@@ -38,20 +40,31 @@ function CreateTeamPageContent() {
     setError(null);
 
     try {
-      // 1. Create the team document
-      const teamDocRef = await addDoc(collection(db, 'teams'), {
-        name: teamName,
-        createdAt: serverTimestamp(),
-        createdBy: currentUser.uid,
-        members: [currentUser.uid], // Add creator as the first member
-        owner: currentUser.uid, // Set creator as the owner
-      });
+        const batch = writeBatch(db);
 
-      // 2. Update the user's document to include the new team ID
-      const userDocRef = doc(db, 'users', currentUser.uid);
-      await updateDoc(userDocRef, {
-        teams: arrayUnion(teamDocRef.id),
-      });
+        // 1. Create the team document within the batch
+        const teamDocRef = doc(collection(db, 'teams')); // Generate ref first
+        batch.set(teamDocRef, {
+            name: teamName.trim(),
+            createdAt: serverTimestamp(),
+            createdBy: currentUser.uid,
+            members: [currentUser.uid], // Add creator as the first member
+            owner: currentUser.uid, // Set creator as the owner
+            memberRoles: { // Initialize roles map
+                [currentUser.uid]: TEAM_ROLES.OWNER,
+            },
+            scrumMasterUid: null, // Initialize scrum master as null
+        });
+
+        // 2. Update the user's document to include the new team ID within the batch
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        batch.update(userDocRef, {
+            teams: arrayUnion(teamDocRef.id),
+        });
+
+        // 3. Commit the batch
+        await batch.commit();
+
 
       toast({
         title: 'Team Created!',
