@@ -20,7 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardHeader, CardContent, CardFooter, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button'; // Import Button
-import { Users, Home } from 'lucide-react'; // Import Users and Home icons
+import { Users, LogOut } from 'lucide-react'; // Import Users and LogOut icons
 import ProtectedRoute from '@/components/auth/ProtectedRoute'; // Import ProtectedRoute
 import { useAuth } from '@/context/AuthContext'; // Import useAuth
 import { auth, db } from '@/lib/firebase'; // Import auth and db
@@ -734,6 +734,18 @@ function RetroSpectifyPageContent() {
     return topLevelItems.filter(item => item.category === category).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
   };
 
+   // --- Logout Handler ---
+    const handleLogout = async () => {
+        try {
+            await signOut(auth);
+            toast({ title: "Logged Out", description: "You have been successfully logged out." });
+            router.push('/login'); // Redirect to login page after logout
+        } catch (error) {
+            console.error("Logout error:", error);
+            toast({ title: "Logout Failed", description: "Could not log you out. Please try again.", variant: "destructive" });
+        }
+    };
+
    // Loading state UI
   if (isLoading || !appUser) {
     return (
@@ -741,14 +753,9 @@ function RetroSpectifyPageContent() {
         <header className="mb-8 flex justify-between items-center">
              <h1 className="text-3xl font-bold text-primary">RetroSpectify</h1>
              <div className="flex items-center space-x-3">
-                  {/* Home Button */}
-                 <Link href="/" passHref>
-                     <Button variant="outline" size="sm">
-                         <Home className="mr-2 h-4 w-4" /> Home
-                     </Button>
-                 </Link>
                   <Skeleton className="h-10 w-24 rounded-md" /> {/* Skeleton for Teams button */}
                   <Skeleton className="h-10 w-10 rounded-full" /> {/* Skeleton for user avatar */}
+                  <Skeleton className="h-10 w-24 rounded-md" /> {/* Skeleton for logout button */}
              </div>
         </header>
          <div className="mb-6">
@@ -781,12 +788,6 @@ function RetroSpectifyPageContent() {
         <header className="mb-8 flex justify-between items-center flex-wrap gap-4">
             <h1 className="text-3xl font-bold text-primary">RetroSpectify</h1>
             <div className="flex items-center space-x-3">
-                 {/* Link to Home */}
-                 <Link href="/" passHref>
-                     <Button variant="outline" size="sm">
-                         <Home className="mr-2 h-4 w-4" /> Home
-                     </Button>
-                 </Link>
                  {/* Link to Team Creation or a Team Dashboard */}
                  <Link href="/teams" passHref>
                      <Button variant="outline" size="sm">
@@ -803,7 +804,10 @@ function RetroSpectifyPageContent() {
                         </Avatar>
                     </div>
                  </Link>
-                 {/* Removed Logout Button */}
+                 {/* Logout Button */}
+                 <Button variant="outline" size="sm" onClick={handleLogout}>
+                    <LogOut className="mr-2 h-4 w-4" /> Logout
+                 </Button>
             </div>
         </header>
 
@@ -924,3 +928,6 @@ export default function RetroSpectifyPage() {
     );
 }
 
+
+
+    
