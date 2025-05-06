@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview Generates a retrospective report and suggests the next scrum master.
@@ -9,16 +8,16 @@
  */
 
 import { ai } from '@/ai/ai-instance';
-import type { GenerateRetroReportInput, GenerateRetroReportOutput, PollResponse, RetroItem, User } from '@/lib/types';
+import type { PollResponse as ExternalPollResponse, RetroItem as ExternalRetroItem, User as ExternalUser } from '@/lib/types'; // Use original types for the public interface
 import { z } from 'genkit';
 
-// Define input schema
+// Define input schemas based on external types for the flow's public interface
 const UserSchema = z.object({
     id: z.string(),
     name: z.string(),
     email: z.string().email(),
     avatarUrl: z.string().url(),
-    role: z.string(), // Assuming role is a string, adjust if it's an enum from lib/types
+    role: z.string(),
     teamIds: z.array(z.string()).optional(),
 });
 
@@ -41,31 +40,47 @@ const RetroItemSchema = z.object({
     pollResponseId: z.string().optional(),
 });
 
-
+// This is the schema for the public generateRetroReport function and the flow's input
 const GenerateRetroReportInputSchema = ai.defineSchema('GenerateRetroReportInput', z.object({
     teamId: z.string().describe("The ID of the team."),
     teamName: z.string().describe("The name of the team."),
     pollResponses: z.array(PollResponseSchema).describe("An array of poll responses from the retrospective."),
-    retroItems: z.array(RetroItemSchema).describe("An array of all retro items (well, improve, discuss, action)."),
+    retroItems: z.array(RetroItemSchema).describe("An array of all retro items (well, improve, discuss, action)."), // All items together
     currentScrumMaster: UserSchema.nullable().optional().describe("The current scrum master, if any."),
+}));
+export type GenerateRetroReportInput = z.infer<typeof GenerateRetroReportInputSchema>;
+
+
+// Internal schema for the prompt, with pre-filtered items
+const RetroReportPromptInputSchema = ai.defineSchema('RetroReportPromptInput', z.object({
+    teamId: z.string().describe("The ID of the team."),
+    teamName: z.string().describe("The name of the team."),
+    pollResponses: z.array(PollResponseSchema).describe("An array of poll responses from the retrospective."),
+    currentScrumMaster: UserSchema.nullable().optional().describe("The current scrum master, if any."),
+    wellItems: z.array(RetroItemSchema).describe("Items categorized as 'What Went Well'."),
+    improveItems: z.array(RetroItemSchema).describe("Items categorized as 'What Could Be Improved'."),
+    discussItems: z.array(RetroItemSchema).describe("Items categorized as 'Discussion Topics'."),
+    actionItems: z.array(RetroItemSchema).describe("Items categorized as 'Action Items'."),
 }));
 
 
-// Define output schema
+// Define output schema (remains the same)
 const GenerateRetroReportOutputSchema = ai.defineSchema('GenerateRetroReportOutput', z.object({
     reportSummaryHtml: z.string().describe("A concise HTML summary of the retrospective, suitable for an email. Include sections for Sentiment Analysis (average rating, key themes from justifications), What Went Well, What Could Be Improved, Discussion Points, and Action Items. Keep it well-formatted and readable."),
     nextScrumMaster: UserSchema.nullable().optional().describe("The suggested next scrum master from the team members (excluding current scrum master, if provided). If no other members, can be null."),
 }));
+export type GenerateRetroReportOutput = z.infer<typeof GenerateRetroReportOutputSchema>;
 
 
 // Define the prompt
 const retroReportPrompt = ai.definePrompt(
     {
         name: 'retroReportPrompt',
-        input: { schema: GenerateRetroReportInputSchema },
+        input: { schema: RetroReportPromptInputSchema }, // Use the internal schema with pre-filtered items
         output: { schema: GenerateRetroReportOutputSchema },
         prompt: `
             You are tasked with generating a retrospective summary report for team "{{teamName}}" (ID: {{teamId}}) and suggesting the next Scrum Master.
+            Date of Report: {{currentDate}}
 
             Current Scrum Master (if any): {{#if currentScrumMaster}}{{currentScrumMaster.name}} ({{currentScrumMaster.email}}){{else}}None{{/if}}
 
@@ -80,57 +95,65 @@ const retroReportPrompt = ai.definePrompt(
 
             Retrospective Items:
             What Went Well:
-            {{#each (filterItems retroItems "well")}}
-                - "{{content}}" (by {{author.name}})
-                {{#if replies}}
-                    {{#each replies}}
-                    (Reply by {{author.name}}: "{{content}}")
-                    {{/each}}
-                {{/if}}
+            {{#if wellItems.length}}
+                {{#each wellItems}}
+                    - "{{content}}" (by {{author.name}})
+                    {{#if replies.length}}
+                        {{#each replies}}
+                        (Reply by {{author.name}}: "{{content}}")
+                        {{/each}}
+                    {{/if}}
+                {{/each}}
             {{else}}
                 No items.
-            {{/each}}
+            {{/if}}
 
             What Could Be Improved:
-            {{#each (filterItems retroItems "improve")}}
-                - "{{content}}" (by {{author.name}})
-                {{#if replies}}
-                    {{#each replies}}
-                    (Reply by {{author.name}}: "{{content}}")
-                    {{/each}}
-                {{/if}}
+            {{#if improveItems.length}}
+                {{#each improveItems}}
+                    - "{{content}}" (by {{author.name}})
+                    {{#if replies.length}}
+                        {{#each replies}}
+                        (Reply by {{author.name}}: "{{content}}")
+                        {{/each}}
+                    {{/if}}
+                {{/each}}
             {{else}}
                 No items.
-            {{/each}}
+            {{/if}}
 
             Discussion Topics:
-            {{#each (filterItems retroItems "discuss")}}
-                - "{{content}}" (by {{author.name}})
-                {{#if replies}}
-                    {{#each replies}}
-                    (Reply by {{author.name}}: "{{content}}")
-                    {{/each}}
-                {{/if}}
+            {{#if discussItems.length}}
+                {{#each discussItems}}
+                    - "{{content}}" (by {{author.name}})
+                    {{#if replies.length}}
+                        {{#each replies}}
+                        (Reply by {{author.name}}: "{{content}}")
+                        {{/each}}
+                    {{/if}}
+                {{/each}}
             {{else}}
                 No items.
-            {{/each}}
+            {{/if}}
 
             Action Items:
-            {{#each (filterItems retroItems "action")}}
-                - "{{content}}" (by {{author.name}})
-                {{#if replies}}
-                    {{#each replies}}
-                    (Reply by {{author.name}}: "{{content}}")
-                    {{/each}}
-                {{/if}}
+            {{#if actionItems.length}}
+                {{#each actionItems}}
+                    - "{{content}}" (by {{author.name}})
+                    {{#if replies.length}}
+                        {{#each replies}}
+                        (Reply by {{author.name}}: "{{content}}")
+                        {{/each}}
+                    {{/if}}
+                {{/each}}
             {{else}}
                 No items.
-            {{/each}}
+            {{/if}}
 
             Tasks:
             1. Generate an HTML summary of the retrospective. This summary should be well-formatted for email.
                It should include:
-               - Team Name and Date of Report (assume today).
+               - Team Name and Date of Report (use the provided currentDate).
                - Sentiment Analysis: Calculate and state the average sentiment rating. Briefly summarize key themes from justifications if available.
                - What Went Well: List items.
                - What Could Be Improved: List items.
@@ -139,7 +162,7 @@ const retroReportPrompt = ai.definePrompt(
                Keep the HTML clean and readable. Use simple tags like <h1>, <h2>, <p>, <ul>, <li>. Do not include <style> tags or complex CSS.
 
             2. Suggest the next Scrum Master.
-               - The next Scrum Master should be chosen from the list of unique authors present in the poll responses and retro items.
+               - The next Scrum Master should be chosen from the list of unique authors present in the poll responses and retro items (from all categories: wellItems, improveItems, discussItems, actionItems).
                - Exclude the current Scrum Master ({{currentScrumMaster.name}}, if provided) from being suggested again if there are other eligible members.
                - If only the current Scrum Master is available, or no other members participated, they can be suggested again or return null if no one suitable.
                - If multiple members are eligible, you can pick one, perhaps randomly or based on some simple logic (e.g., someone who hasn't been SM recently, though that data isn't provided, so random is fine).
@@ -149,20 +172,15 @@ const retroReportPrompt = ai.definePrompt(
             Return the result ONLY as a JSON object matching the output schema.
         `,
         templateFormat: 'handlebars',
-        model: 'googleai/gemini-2.0-flash', // Or your preferred model
-        // Define a Handlebars helper to filter items by category
-        helpers: {
-            filterItems: (items: RetroItem[], category: string) => {
-                return items.filter(item => item.category === category);
-            }
-        }
+        model: 'googleai/gemini-2.0-flash',
+        // Removed helpers, as filtering is done in the flow
     }
 );
 
 
 // Define the flow
 const generateRetroReportFlow = ai.defineFlow<
-    typeof GenerateRetroReportInputSchema,
+    typeof GenerateRetroReportInputSchema, // Input is the original combined schema
     typeof GenerateRetroReportOutputSchema
 >(
     {
@@ -171,26 +189,47 @@ const generateRetroReportFlow = ai.defineFlow<
         outputSchema: GenerateRetroReportOutputSchema,
     },
     async (input) => {
-        // Basic input validation or transformation if needed before calling the prompt
         if (!input.teamName || !input.teamId) {
             throw new Error("Team name and ID are required.");
         }
 
+        // Filter items by category before calling the prompt
+        const wellItems = input.retroItems.filter(item => item.category === 'well');
+        const improveItems = input.retroItems.filter(item => item.category === 'improve');
+        const discussItems = input.retroItems.filter(item => item.category === 'discuss');
+        const actionItems = input.retroItems.filter(item => item.category === 'action');
+
+        // Prepare the input for the prompt, including the current date
+        const promptInput: z.infer<typeof RetroReportPromptInputSchema> & { currentDate: string } = {
+            teamId: input.teamId,
+            teamName: input.teamName,
+            pollResponses: input.pollResponses,
+            currentScrumMaster: input.currentScrumMaster,
+            wellItems,
+            improveItems,
+            discussItems,
+            actionItems,
+            currentDate: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+        };
+
+
         try {
-            const { output } = await retroReportPrompt(input);
+            const { output } = await retroReportPrompt(promptInput); // Call prompt with the structured input
             if (!output) {
                 throw new Error("AI failed to generate the report.");
             }
+
             // Ensure the output structure matches, especially the nextScrumMaster User object
             if (output.nextScrumMaster && typeof output.nextScrumMaster.id === 'undefined') {
                  console.warn("AI suggested nextScrumMaster without full User object details, attempting to find from input...");
-                 // Attempt to find the full user object from the input if only partial data was returned by AI (less ideal)
-                 const allParticipants = [...input.pollResponses.map(p => p.author), ...input.retroItems.map(i => i.author)];
+                 const allParticipants: ExternalUser[] = [
+                    ...input.pollResponses.map(p => p.author as ExternalUser),
+                    ...input.retroItems.map(i => i.author as ExternalUser)
+                 ];
                  const foundUser = allParticipants.find(u => u.name === output.nextScrumMaster?.name || u.email === output.nextScrumMaster?.email);
-                 if(foundUser) output.nextScrumMaster = foundUser;
+                 if(foundUser) output.nextScrumMaster = foundUser as z.infer<typeof UserSchema>;
                  else {
                     console.error("Could not fully resolve nextScrumMaster User object.");
-                    // Set to null if can't resolve to avoid partial data
                     output.nextScrumMaster = null;
                  }
             }
@@ -198,7 +237,6 @@ const generateRetroReportFlow = ai.defineFlow<
             return output;
         } catch (error) {
             console.error("Error during retrospective report generation flow:", error);
-            // Provide a fallback or rethrow
             throw new Error(`Failed to generate report: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
@@ -211,6 +249,19 @@ const generateRetroReportFlow = ai.defineFlow<
  */
 export async function generateRetroReport(input: GenerateRetroReportInput): Promise<GenerateRetroReportOutput> {
     // Validate input using the Zod schema before calling the flow
+    // The input for this public function is already of type GenerateRetroReportInput (inferred)
+    // So, direct parsing is mostly for type safety and ensuring it's what the flow expects
     const validatedInput = GenerateRetroReportInputSchema.parse(input);
     return generateRetroReportFlow(validatedInput);
 }
+
+// Ensure the types are compatible between external and Zod schemas
+// This is a type assertion, not runtime code.
+type _AssertUser = ExternalUser extends z.infer<typeof UserSchema> ? true : false;
+type _AssertPollResponse = ExternalPollResponse extends z.infer<typeof PollResponseSchema> ? true : false;
+type _AssertRetroItem = ExternalRetroItem extends z.infer<typeof RetroItemSchema> ? true : false;
+
+const _userAssertion: _AssertUser = true;
+const _pollResponseAssertion: _AssertPollResponse = true;
+const _retroItemAssertion: _AssertRetroItem = true;
+// If these assertions cause a type error, the Zod schemas need to be updated to match the external types.
