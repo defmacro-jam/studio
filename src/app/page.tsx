@@ -4,7 +4,6 @@
 import { useState, useEffect, useMemo, useCallback, type DragEvent } from 'react';
 import { useRouter } from 'next/navigation'; // Import useRouter
 import { signOut } from 'firebase/auth'; // Import signOut
-import { auth, db } from '@/lib/firebase'; // Import auth and db
 import { doc, getDoc } from 'firebase/firestore'; // Import Firestore functions
 import type { RetroItem, PollResponse, User, Category } from '@/lib/types';
 import { PollSection } from '@/components/retrospectify/PollSection';
@@ -22,6 +21,7 @@ import { Button } from '@/components/ui/button'; // Import Button
 import { LogOut } from 'lucide-react'; // Import LogOut icon
 import ProtectedRoute from '@/components/auth/ProtectedRoute'; // Import ProtectedRoute
 import { useAuth } from '@/context/AuthContext'; // Import useAuth
+import { auth, db } from '@/lib/firebase'; // Import auth and db
 import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
 
 
@@ -77,7 +77,7 @@ function RetroSpectifyPageContent() {
   const [isEditingPoll, setIsEditingPoll] = useState(false);
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [isAdjustRatingModalOpen, setIsAdjustRatingModalOpen] = useState(false);
-  const [ratingAdjustmentProps, setRatingAdjustmentProps] = useState<{ currentRating: number; suggestedRating: number } | null>(null);
+  const [ratingAdjustmentProps, setRatingAdjustmentProps] = useState<{ itemIdToAdjust: string, currentRating: number; suggestedRating: number } | null>(null);
 
   const { toast } = useToast();
 
@@ -588,7 +588,7 @@ function RetroSpectifyPageContent() {
             console.log("Triggering action item generation for:", itemId);
             handleGenerateActionItem(itemId); // Trigger AI generation (includes permission check)
             setDraggingItemId(null);
-            return;
+            return; // Stop further processing for this drop
         }
 
          // Restriction: Prevent moving *anything else* directly into 'action'
@@ -600,8 +600,22 @@ function RetroSpectifyPageContent() {
                  variant: "destructive",
              });
              setDraggingItemId(null);
-             return;
+             return; // Stop further processing
          }
+
+         // --- Proceed with moving the item ---
+         // TODO: Update item category in DB
+         setRetroItems(prev =>
+             prev.map(item =>
+                 item.id === itemId
+                     ? { ...item, category: targetCategory, timestamp: new Date() }
+                     : item
+             )
+         );
+         toast({
+             title: "Item Moved",
+             description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`
+         });
 
          // Check for moving between 'well' and 'improve' AND if the item belongs to the current user
          const isWellToImprove = itemToMove.category === 'well' && targetCategory === 'improve';
@@ -609,7 +623,7 @@ function RetroSpectifyPageContent() {
          const userIsAuthor = itemToMove.author.id === appUser.id;
 
          if ((isWellToImprove || isImproveToWell) && userIsAuthor && currentUserResponse) {
-             // Prompt for rating adjustment ONLY if the current user is the author
+             // Calculate suggested rating
              const suggestedRating = isWellToImprove
                  ? Math.max(1, currentUserResponse.rating - 1)
                  : Math.min(5, currentUserResponse.rating + 1);
@@ -617,47 +631,16 @@ function RetroSpectifyPageContent() {
              if (suggestedRating !== currentUserResponse.rating) {
                 console.log("Prompting for rating adjustment (author move).");
                 setRatingAdjustmentProps({
+                    itemIdToAdjust: itemId, // Store the ID of the item that triggered the modal
                     currentRating: currentUserResponse.rating,
                     suggestedRating: suggestedRating,
                 });
                 setIsAdjustRatingModalOpen(true);
-                // Don't move immediately - wait for modal
-             } else {
-                 console.log("Rating adjustment not needed (author move), moving directly.");
-                 // Proceed with move if no rating change needed
-                 // TODO: Update item category in DB
-                 setRetroItems(prev =>
-                     prev.map(item =>
-                         item.id === itemId
-                             ? { ...item, category: targetCategory, timestamp: new Date() }
-                             : item
-                     )
-                 );
-                 toast({
-                     title: "Item Moved",
-                     description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`
-                 });
-                 setDraggingItemId(null); // Clear drag state
+                // Modal will handle rating update or cancellation
              }
-         } else {
-             // Generic Move Logic (admin move, non-well/improve move, or no poll response)
-             console.log("Moving item directly (admin, non-well/improve, or no poll response).");
-             // TODO: Update item category in DB
-             setRetroItems(prev =>
-                 prev.map(item =>
-                     item.id === itemId
-                         ? { ...item, category: targetCategory, timestamp: new Date() }
-                         : item
-                 )
-             );
-             toast({
-                 title: "Item Moved",
-                 description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`
-             });
-             setDraggingItemId(null); // Clear drag state
          }
 
-         // Note: setDraggingItemId(null) is called within each branch now
+         setDraggingItemId(null); // Clear drag state after processing move
 
     }, [appUser, retroItems, toast, handleGenerateActionItem, currentUserResponse]); // Depend on appUser
 
@@ -665,19 +648,10 @@ function RetroSpectifyPageContent() {
     // Handler for AdjustRatingModal confirmation
     const handleAdjustRatingConfirm = useCallback((newRating: number) => {
         try {
-            if (!currentUserResponse || !appUser || !draggingItemId) {
+            if (!currentUserResponse || !appUser) {
                  console.error("Cannot confirm rating adjustment: Missing context.");
                  return;
             }
-
-            const itemToMove = retroItems.find(item => item.id === draggingItemId);
-            if (!itemToMove) {
-                console.error("Error adjusting rating: Original item not found.");
-                return;
-            }
-
-            // Determine the target category based on the direction of the move
-            const targetCategory = itemToMove.category === 'well' ? 'improve' : 'well';
 
             // 1. Update poll response rating
             // TODO: Update poll response rating in DB
@@ -689,60 +663,28 @@ function RetroSpectifyPageContent() {
                 )
             );
 
-            // 2. Move the retro item
-            // TODO: Update item category in DB
-            setRetroItems(prev =>
-                prev.map(item =>
-                    item.id === draggingItemId
-                        ? { ...item, category: targetCategory, timestamp: new Date() }
-                        : item
-                )
-            );
-
             toast({
-                title: "Rating Adjusted & Item Moved",
-                description: `Your sentiment rating updated to ${newRating} stars and item moved.`,
+                title: "Rating Adjusted",
+                description: `Your sentiment rating updated to ${newRating} stars.`,
             });
         } catch (error) {
             console.error("Error in handleAdjustRatingConfirm:", error);
             toast({
                  title: "Error Adjusting Rating",
-                 description: "Could not update rating and move item.",
+                 description: "Could not update rating.",
                  variant: "destructive"
              });
         } finally {
             setIsAdjustRatingModalOpen(false);
             setRatingAdjustmentProps(null);
-            setDraggingItemId(null);
+            // Do NOT clear draggingItemId here, it's already cleared in handleMoveItem
         }
-    }, [currentUserResponse, appUser, toast, draggingItemId, retroItems]);
+    }, [currentUserResponse, appUser, toast]); // Removed dependency on draggingItemId and retroItems
 
     // Handler for AdjustRatingModal cancellation
     const handleAdjustRatingCancel = useCallback(() => {
          try {
-             if (!draggingItemId) {
-                  console.error("Cannot cancel rating adjustment: Missing item ID.");
-                  return;
-             }
-
-             const itemToMove = retroItems.find(item => item.id === draggingItemId);
-             if (!itemToMove) {
-                 console.error("Error cancelling rating adjustment: Original item not found.");
-                 return;
-             }
-
-             const targetCategory = itemToMove.category === 'well' ? 'improve' : 'well';
-
-             // Move the retro item without changing the rating
-             // TODO: Update item category in DB
-             setRetroItems(prev =>
-                 prev.map(item =>
-                     item.id === draggingItemId
-                         ? { ...item, category: targetCategory, timestamp: new Date() }
-                         : item
-                 )
-             );
-
+             // No item move needed here, it's already done. Just show feedback.
              toast({
                  title: "Item Moved",
                  description: `Item moved, but sentiment rating kept at ${ratingAdjustmentProps?.currentRating || 'previous'} stars.`,
@@ -750,16 +692,16 @@ function RetroSpectifyPageContent() {
          } catch (error) {
              console.error("Error in handleAdjustRatingCancel:", error);
               toast({
-                 title: "Error Moving Item",
-                 description: "Could not move item after cancelling rating adjustment.",
+                 title: "Error",
+                 description: "An unexpected error occurred while closing the rating dialog.",
                  variant: "destructive"
               });
          } finally {
             setIsAdjustRatingModalOpen(false);
             setRatingAdjustmentProps(null);
-            setDraggingItemId(null);
+             // Do NOT clear draggingItemId here, it's already cleared in handleMoveItem
          }
-    }, [draggingItemId, retroItems, toast, ratingAdjustmentProps]);
+    }, [toast, ratingAdjustmentProps]); // Removed dependency on draggingItemId and retroItems
 
     // --- Logout Handler ---
     const handleLogout = async () => {
@@ -945,4 +887,3 @@ export default function RetroSpectifyPage() {
         </ProtectedRoute>
     );
 }
-
