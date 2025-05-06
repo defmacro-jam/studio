@@ -108,6 +108,7 @@ function AdminSettingsPageContent() {
         title: "Settings Saved",
         description: `Demo mode is now ${isDemoMode ? 'ENABLED' : 'DISABLED'}.`,
       });
+      router.push('/'); // Redirect to home page after successful save
     } catch (err) {
       console.error("Error saving app settings:", err);
       setError("Failed to save settings.");
