@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { StarRating } from './StarRating';
 import type { User } from '@/lib/types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Send, Edit } from 'lucide-react'; // Import Edit icon
+import { Send, Edit, X } from 'lucide-react'; // Import Edit and X icons
 import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
 
 interface PollSectionProps {
@@ -18,6 +18,7 @@ interface PollSectionProps {
   initialRating?: number; // Optional initial rating for editing
   initialJustification?: string; // Optional initial justification for editing
   isEditing?: boolean; // Flag to indicate if editing mode is active
+  onCancelEdit?: () => void; // Optional: Callback to cancel editing mode
 }
 
 export function PollSection({
@@ -26,6 +27,7 @@ export function PollSection({
   initialRating = 0,
   initialJustification = '',
   isEditing = false,
+  onCancelEdit, // Receive the cancel callback
 }: PollSectionProps) {
   const [rating, setRating] = useState(initialRating);
   const [justification, setJustification] = useState(initialJustification);
@@ -42,6 +44,12 @@ export function PollSection({
     if (rating > 0) {
       onSubmitPoll(rating, justification);
       // Parent component will handle hiding/swapping this component
+    }
+  };
+
+  const handleCancel = () => {
+    if (onCancelEdit) {
+        onCancelEdit(); // Call the parent's cancel handler
     }
   };
 
@@ -82,7 +90,12 @@ export function PollSection({
               />
           </div>
           </CardContent>
-          <CardFooter className="flex justify-end">
+          <CardFooter className="flex justify-end space-x-2"> {/* Add space-x-2 for button spacing */}
+          {isEditing && onCancelEdit && ( // Show cancel button only in editing mode if callback provided
+                <Button type="button" variant="outline" onClick={handleCancel}>
+                    <X className="mr-2 h-4 w-4" /> Cancel
+                </Button>
+            )}
           <Button type="submit" disabled={rating === 0}>
               {isEditing ? (
                 <>

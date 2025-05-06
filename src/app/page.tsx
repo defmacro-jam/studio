@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, type DragEvent } from 'react';
@@ -366,6 +367,13 @@ function RetroSpectifyPageContent() {
     setIsEditingPoll(true);
   }, []);
 
+  // Function to cancel editing the poll
+  const handleCancelEditPoll = useCallback(() => {
+    setIsEditingPoll(false);
+    // Optionally, show a toast or message indicating edit was cancelled
+    toast({ title: "Edit Cancelled", description: "Your vote remains unchanged." });
+  }, [toast]);
+
 
   const handleAddItem = useCallback((category: Category) => (content: string) => {
      if (!appUser) return; // Ensure appUser is loaded
@@ -603,7 +611,14 @@ function RetroSpectifyPageContent() {
              return; // Stop further processing
          }
 
-         // --- Proceed with moving the item ---
+         // Check for moving between 'well' and 'improve' AND if the item belongs to the current user BEFORE the state update
+         const isWellToImprove = itemToMove.category === 'well' && targetCategory === 'improve';
+         const isImproveToWell = itemToMove.category === 'improve' && targetCategory === 'well';
+         const userIsAuthor = itemToMove.author.id === appUser.id;
+         const shouldPromptRating = (isWellToImprove || isImproveToWell) && userIsAuthor && currentUserResponse;
+
+
+         // --- Proceed with moving the item in the state ---
          // TODO: Update item category in DB
          setRetroItems(prev =>
              prev.map(item =>
@@ -612,17 +627,15 @@ function RetroSpectifyPageContent() {
                      : item
              )
          );
+         // Show toast AFTER state update
          toast({
              title: "Item Moved",
              description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`
          });
 
-         // Check for moving between 'well' and 'improve' AND if the item belongs to the current user
-         const isWellToImprove = itemToMove.category === 'well' && targetCategory === 'improve';
-         const isImproveToWell = itemToMove.category === 'improve' && targetCategory === 'well';
-         const userIsAuthor = itemToMove.author.id === appUser.id;
 
-         if ((isWellToImprove || isImproveToWell) && userIsAuthor && currentUserResponse) {
+         // If moving between 'well' and 'improve' by the author, prompt for rating adjustment
+         if (shouldPromptRating && currentUserResponse) {
              // Calculate suggested rating
              const suggestedRating = isWellToImprove
                  ? Math.max(1, currentUserResponse.rating - 1)
@@ -677,16 +690,16 @@ function RetroSpectifyPageContent() {
         } finally {
             setIsAdjustRatingModalOpen(false);
             setRatingAdjustmentProps(null);
-            // Do NOT clear draggingItemId here, it's already cleared in handleMoveItem
+            // Item is already moved, no need to do anything else here
         }
-    }, [currentUserResponse, appUser, toast]); // Removed dependency on draggingItemId and retroItems
+    }, [currentUserResponse, appUser, toast]);
 
     // Handler for AdjustRatingModal cancellation
     const handleAdjustRatingCancel = useCallback(() => {
          try {
-             // No item move needed here, it's already done. Just show feedback.
+             // Item move is already done in handleMoveItem. Just show feedback about keeping the rating.
              toast({
-                 title: "Item Moved",
+                 title: "Item Moved, Rating Unchanged",
                  description: `Item moved, but sentiment rating kept at ${ratingAdjustmentProps?.currentRating || 'previous'} stars.`,
              });
          } catch (error) {
@@ -699,7 +712,7 @@ function RetroSpectifyPageContent() {
          } finally {
             setIsAdjustRatingModalOpen(false);
             setRatingAdjustmentProps(null);
-             // Do NOT clear draggingItemId here, it's already cleared in handleMoveItem
+             // Item is already moved
          }
     }, [toast, ratingAdjustmentProps]); // Removed dependency on draggingItemId and retroItems
 
@@ -780,6 +793,7 @@ function RetroSpectifyPageContent() {
                 initialRating={isEditingPoll ? currentUserResponse?.rating : 0}
                 initialJustification={isEditingPoll ? currentUserResponse?.justification : ''}
                 isEditing={isEditingPoll}
+                onCancelEdit={handleCancelEditPoll} // Pass the cancel handler
             />
         )}
          {shouldShowResults && ( // Show results container if user has submitted (or is admin?) - controlled by shouldShowResults
@@ -787,7 +801,6 @@ function RetroSpectifyPageContent() {
                 responses={pollResponses}
                 onEdit={handleEditPoll} // Only pass if user can edit (user has voted)
                 currentUserHasVoted={!!currentUserResponse} // Let component know if current user voted
-                initiallyOpen={false} // Always start closed, user clicks to open
             />
          )}
          {!shouldShowPollForm && !currentUserResponse && (
