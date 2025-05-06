@@ -27,7 +27,7 @@ if (!apiKey) {
 
 
 const firebaseConfig = {
-  apiKey: apiKey || "MISSING_API_KEY_CHECK_CONSOLE_ERROR", // Use the checked key or a more descriptive placeholder
+  apiKey: apiKey || "MISSING_API_KEY_CHECK_CONSOLE_ERROR", // Use the checked key or a descriptive placeholder
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
