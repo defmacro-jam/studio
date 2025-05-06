@@ -25,18 +25,19 @@ export function PollSection({
   currentUser,
   onSubmitPoll,
   initialRating = 0,
-  initialJustification = '',
+  initialJustification = '', // This prop is no longer used to set the initial justification in edit mode
   isEditing = false,
   onCancelEdit, // Receive the cancel callback
 }: PollSectionProps) {
   const [rating, setRating] = useState(initialRating);
-  const [justification, setJustification] = useState(initialJustification);
+  const [justification, setJustification] = useState(''); // Start with empty justification
 
   // Effect to update state if initial props change (e.g., starting an edit)
   useEffect(() => {
     setRating(initialRating);
-    setJustification(initialJustification);
-  }, [initialRating, initialJustification, isEditing]);
+    // Clear justification when entering edit mode, otherwise use initial (which is always '' now)
+    setJustification(isEditing ? '' : '');
+  }, [initialRating, isEditing]); // Removed initialJustification dependency
 
 
   const handleSubmit = (e: FormEvent) => {
@@ -63,7 +64,7 @@ export function PollSection({
           {isEditing ? 'Update Your Sentiment' : 'Weekly Sentiment Poll'}
         </CardTitle>
         <CardDescription>
-          {isEditing ? 'You can change your rating and justification below.' : 'How did the past week go for you?'}
+          {isEditing ? 'You can change your rating and provide a new justification below.' : 'How did the past week go for you?'}
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
