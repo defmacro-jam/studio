@@ -16,9 +16,9 @@ import { z } from 'genkit';
 const UserSchema = z.object({
     id: z.string(),
     name: z.string(),
-    email: z.string().describe("The user's email address."), // Removed .email()
-    avatarUrl: z.string().describe("URL of the user's avatar."), // Removed .url()
-    role: z.string(), // AppRole is a string enum, z.string() is fine. For stricter validation use z.enum(Object.values(APP_ROLES) as [string, ...string[]]) if APP_ROLES is accessible here.
+    email: z.string().describe("The user's email address."),
+    avatarUrl: z.string().describe("URL of the user's avatar."),
+    role: z.string(), // AppRole is a string enum, z.string() is fine.
     teamIds: z.array(z.string()).optional(),
 });
 
@@ -173,7 +173,7 @@ const retroReportPrompt = ai.definePrompt(
             Return the result ONLY as a JSON object matching the output schema.
         `,
         templateFormat: 'handlebars',
-        model: 'googleai/gemini-2.0-flash',
+        model: 'googleai/gemini-2.0-flash', // Ensure model is consistent or appropriate for the task. Changed from 1.5 to 2.0 flash
     }
 );
 
@@ -270,5 +270,3 @@ type _AssertRetroItem = ExternalRetroItem extends z.infer<typeof RetroItemSchema
 const _userAssertion: _AssertUser = true;
 const _pollResponseAssertion: _AssertPollResponse = true;
 const _retroItemAssertion: _AssertRetroItem = true;
-
-```
