@@ -42,7 +42,7 @@ export function AdjustRatingModal({
   const isDecrease = suggestedRating < currentRating;
 
   return (
-    <AlertDialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
+    <AlertDialog open={isOpen}> {/* Removed onOpenChange to prevent double callback */}
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Adjust Your Sentiment Rating?</AlertDialogTitle>
