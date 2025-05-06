@@ -1,36 +1,122 @@
 
-rules_version = '2'; // Use the latest version
+rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Allow read/write access to the 'users' collection for authenticated users
-    // Allow users to read their own document and admins to read any user document (if roles are implemented later)
+    // Users collection
     match /users/{userId} {
-      allow read: if request.auth != null; // Allow any authenticated user to read (adjust if needed for privacy)
-      // Allow users to create their own document or update their own document
-      allow write: if request.auth != null && request.auth.uid == userId;
+      // Authenticated users can read and update their own profile.
+      // For signup, user creates their own document.
+      allow read, update, create: if request.auth != null && request.auth.uid == userId;
+
+      // Admin specific rules for /users/{userId}
+      // Admins can get any specific user document.
+      allow get: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      // Admins can update any user document (e.g., change roles).
+      // Ensure that 'role' field exists and is 'admin'.
+      allow update: if request.auth != null &&
+                       exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      // Admins can delete any user document (except their own, which should be handled by client-side logic if needed).
+      allow delete: if request.auth != null &&
+                       exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // Allow read/write access to the 'teams' collection for authenticated users who are members
+    // Allow admins to list all users for the admin page.
+    // This rule path covers the entire /users collection for list operations.
+    match /users/{document=**} {
+        allow list: if request.auth != null &&
+                       exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+
+    // Teams collection
     match /teams/{teamId} {
-      // Allow read if the user is authenticated and listed in the team's 'members' array
+      // Members of the team can read the team document.
       allow read: if request.auth != null && resource.data.members.hasAny([request.auth.uid]);
-      // Allow creating a team if the user is authenticated (creator becomes owner/member)
-      allow create: if request.auth != null && request.resource.data.owner == request.auth.uid && request.resource.data.members[0] == request.auth.uid;
-      // Allow updating (e.g., adding/removing members) only by the owner
-      allow update: if request.auth != null && resource.data.owner == request.auth.uid;
-      // Allow deleting only by the owner (use with caution)
+
+      // Authenticated users can create a new team.
+      // The 'owner' and 'members' array in the new team document must include request.auth.uid.
+      // The 'createdBy' field must be request.auth.uid.
+      // The creator's role in memberRoles must be 'owner'.
+      allow create: if request.auth != null &&
+                       request.resource.data.owner == request.auth.uid &&
+                       request.resource.data.createdBy == request.auth.uid &&
+                       request.resource.data.members.hasAny([request.auth.uid]) &&
+                       request.resource.data.memberRoles[request.auth.uid] == 'owner';
+
+      // Owner or Manager of the team can update the team document.
+      allow update: if request.auth != null &&
+                       (resource.data.owner == request.auth.uid ||
+                        (resource.data.memberRoles[request.auth.uid] == 'manager'));
+
+      // Only the owner can delete a team.
       allow delete: if request.auth != null && resource.data.owner == request.auth.uid;
     }
 
-    // Add rules for other collections (e.g., retrospectives, poll responses) as needed
-    // Example: Allow team members to read/write retrospectives associated with their team
-    // match /retrospectives/{retroId} {
-    //   allow read, write: if request.auth != null && get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.members.hasAny([request.auth.uid]);
+
+    // Retro Items and Poll Responses (Example - adjust to your actual data structure)
+    // This is a generic rule; you might need more specific rules based on team membership.
+    // Assuming retro items and poll responses are subcollections of a team, or have a teamId field.
+
+    // Example if they are top-level collections with a teamId field:
+    // match /retroItems/{itemId} {
+    //   allow read, create, update, delete: if request.auth != null &&
+    //     (exists(/databases/$(database)/documents/teams/$(resource.data.teamId)) &&
+    //      get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.members.hasAny([request.auth.uid]));
+    //   // Add more granular control: e.g., only author can edit/delete, or team managers
+    // }
+    // match /pollResponses/{responseId} {
+    //   allow read, create, update, delete: if request.auth != null &&
+    //     (exists(/databases/$(database)/documents/teams/$(resource.data.teamId)) &&
+    //      get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.members.hasAny([request.auth.uid]));
+    //   // Add more granular control: e.g., only one response per user per poll
     // }
 
-    // Default deny for any path not explicitly matched
+    // For now, allow authenticated users to read/write to these collections if they exist.
+    // You'll need to refine this based on how you associate these items with teams.
+    // If they are subcollections, rules would be different.
+    // These are simplified for now.
+
+    // Assuming retroItems are stored in a top-level collection.
+    // Modify if retroItems are subcollections of teams or projects.
+    match /retroItems/{itemId} {
+      // Allow read if user is authenticated (simplistic, ideally tie to team membership)
+      allow read: if request.auth != null;
+      // Allow create if user is authenticated
+      allow create: if request.auth != null;
+      // Allow update if user is authenticated and is the author, OR if user is an admin.
+      allow update: if request.auth != null &&
+                       (resource.data.author.id == request.auth.uid ||
+                        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+      // Allow delete if user is authenticated and is the author, OR if user is an admin.
+      allow delete: if request.auth != null &&
+                       (resource.data.author.id == request.auth.uid ||
+                        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+    }
+
+    // Assuming pollResponses are stored in a top-level collection.
+    // Modify if pollResponses are subcollections.
+    match /pollResponses/{responseId} {
+      // Allow read if user is authenticated (simplistic, ideally tie to team membership)
+      allow read: if request.auth != null;
+      // Allow create if user is authenticated (further rules might be needed, e.g., one response per user per poll)
+      allow create: if request.auth != null && request.resource.data.author.id == request.auth.uid;
+      // Allow update if user is authenticated and is the author.
+      allow update: if request.auth != null && resource.data.author.id == request.auth.uid;
+      // Allow delete if user is authenticated and is the author (or admin).
+      allow delete: if request.auth != null &&
+                       (resource.data.author.id == request.auth.uid ||
+                        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+    }
+
+    // Default deny all other access
     match /{document=**} {
       allow read, write: if false;
     }
