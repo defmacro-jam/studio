@@ -1,12 +1,38 @@
 
-rules_version = '2';
+rules_version = '2'; // Use the latest version
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // WARNING: Allows anyone to read/write to any document.
-    // For development ONLY. Replace with secure rules for production.
+
+    // Allow read/write access to the 'users' collection for authenticated users
+    // Allow users to read their own document and admins to read any user document (if roles are implemented later)
+    match /users/{userId} {
+      allow read: if request.auth != null; // Allow any authenticated user to read (adjust if needed for privacy)
+      // Allow users to create their own document or update their own document
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Allow read/write access to the 'teams' collection for authenticated users who are members
+    match /teams/{teamId} {
+      // Allow read if the user is authenticated and listed in the team's 'members' array
+      allow read: if request.auth != null && resource.data.members.hasAny([request.auth.uid]);
+      // Allow creating a team if the user is authenticated (creator becomes owner/member)
+      allow create: if request.auth != null && request.resource.data.owner == request.auth.uid && request.resource.data.members[0] == request.auth.uid;
+      // Allow updating (e.g., adding/removing members) only by the owner
+      allow update: if request.auth != null && resource.data.owner == request.auth.uid;
+      // Allow deleting only by the owner (use with caution)
+      allow delete: if request.auth != null && resource.data.owner == request.auth.uid;
+    }
+
+    // Add rules for other collections (e.g., retrospectives, poll responses) as needed
+    // Example: Allow team members to read/write retrospectives associated with their team
+    // match /retrospectives/{retroId} {
+    //   allow read, write: if request.auth != null && get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.members.hasAny([request.auth.uid]);
+    // }
+
+    // Default deny for any path not explicitly matched
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }
