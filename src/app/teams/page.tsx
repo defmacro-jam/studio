@@ -9,7 +9,7 @@ import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Loader2, PlusCircle, Users, ArrowRight, Trash2 } from 'lucide-react';
+import { Loader2, PlusCircle, Users, ArrowRight, Trash2, Home } from 'lucide-react'; // Added Home icon
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import type { Team as TeamData } from '@/lib/types';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -170,7 +170,13 @@ function TeamsListPageContent() {
 
   return (
     <div className="container mx-auto p-4 md:p-8">
-      <header className="mb-8 flex justify-between items-center">
+      <header className="mb-8 flex justify-between items-center flex-wrap gap-4"> {/* Added flex-wrap and gap */}
+          {/* Go Home Button */}
+          <Link href="/" passHref>
+            <Button variant="outline" size="sm">
+              <Home className="mr-2 h-4 w-4" /> Go Home
+            </Button>
+          </Link>
         <h1 className="text-3xl font-bold text-primary flex items-center">
           <Users className="mr-3 h-7 w-7" /> Your Teams
         </h1>
@@ -295,3 +301,4 @@ export default function TeamsListPage() {
     </ProtectedRoute>
   );
 }
+
