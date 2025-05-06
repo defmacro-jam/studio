@@ -20,6 +20,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group" // Adde
 import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
 import type { Team as TeamData, TeamMemberDisplay, TeamRole } from '@/lib/types'; // Import updated types
 import { TEAM_ROLES } from '@/lib/types';
+import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton component
 
 // Keep local definition for internal use, mapping directly to TeamMemberDisplay
 interface MemberDisplayInfo extends TeamMemberDisplay {}
@@ -237,7 +238,7 @@ function TeamPageContent() {
         description: `${userData.displayName || userData.email} has been added to the team as a Member.`,
       });
       setInviteEmail('');
-      fetchTeamData();
+      fetchTeamData(); // Re-fetch data to show updated member list
 
     } catch (err: any) {
       console.error('Invite error:', err);
@@ -261,6 +262,13 @@ function TeamPageContent() {
             return;
        }
 
+       // Prevent self-removal through this UI
+        if (memberUid === currentUser?.uid) {
+            toast({ title: 'Cannot Remove Self', description: 'You cannot remove yourself from the team via this button.', variant: 'destructive'});
+            return;
+        }
+
+
        setIsRemoving(memberUid);
        setError(null);
 
@@ -283,7 +291,7 @@ function TeamPageContent() {
                description: `${memberToRemove.name || memberToRemove.email} has been removed from the team.`,
                variant: 'destructive'
            });
-           fetchTeamData();
+           fetchTeamData(); // Re-fetch data to show updated member list
 
        } catch (err: any) {
            console.error('Remove member error:', err);
@@ -309,6 +317,12 @@ function TeamPageContent() {
         const memberToUpdate = teamMembers.find(m => m.uid === memberUid);
         if (!memberToUpdate || memberToUpdate.teamRole === newRole) return; // No change needed
 
+        // Owner cannot be demoted via this UI
+        if (memberToUpdate.teamRole === TEAM_ROLES.OWNER) {
+             toast({title: "Action Not Allowed", description: "The team owner's role cannot be changed here.", variant: "destructive"});
+             return;
+        }
+
         setIsUpdatingRole(memberUid);
         try {
             const teamDocRef = doc(db, 'teams', teamData.id);
@@ -320,7 +334,8 @@ function TeamPageContent() {
                 title: "Role Updated",
                 description: `${memberToUpdate.name}'s role set to ${newRole.charAt(0).toUpperCase() + newRole.slice(1)}.`,
             });
-            fetchTeamData(); // Refresh data
+            fetchTeamData(); // Refresh data to show updated role
+
         } catch (err: any) {
             console.error("Error updating role:", err);
             toast({ title: "Update Failed", description: "Could not update member role.", variant: "destructive"});
@@ -388,6 +403,7 @@ function TeamPageContent() {
    }
 
   if (!teamData) {
+    // This case should ideally be covered by loading or error state, but acts as a fallback
     return <div className="flex items-center justify-center min-h-screen"><p>Loading team data...</p></div>;
   }
 
@@ -506,7 +522,7 @@ function TeamPageContent() {
                                        <Select
                                            value={member.teamRole}
                                            onValueChange={(newRole) => handleUpdateRole(member.uid, newRole as TeamRole)}
-                                           disabled={isUpdatingRole === member.uid}
+                                           disabled={isUpdatingRole === member.uid || member.teamRole === TEAM_ROLES.OWNER} // Disable if updating or if member is owner
                                        >
                                           <SelectTrigger className="w-[120px] h-9 text-xs">
                                               <SelectValue placeholder="Change role" />
@@ -520,7 +536,7 @@ function TeamPageContent() {
                                           </SelectContent>
                                       </Select>
                                   )}
-                                  {canManageTeam && member.teamRole !== TEAM_ROLES.OWNER && (
+                                  {canManageTeam && member.teamRole !== TEAM_ROLES.OWNER && member.uid !== currentUser.uid && ( // Ensure user can manage, member is not owner, and not self
                                       <AlertDialog>
                                           <AlertDialogTrigger asChild>
                                                <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive h-9 px-2" disabled={isRemoving === member.uid}>
