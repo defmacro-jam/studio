@@ -788,7 +788,7 @@ function RetroSpectifyPageContent() {
             <h1 className="text-3xl font-bold text-primary">RetroSpectify</h1>
             <div className="flex items-center space-x-3">
                  {/* Link to Team Creation or a Team Dashboard */}
-                 <Link href="/teams/create" passHref>
+                 <Link href="/teams" passHref>
                      <Button variant="outline" size="sm">
                          <Users className="mr-2 h-4 w-4" /> Create / View Teams
                      </Button>
@@ -920,4 +920,3 @@ export default function RetroSpectifyPage() {
         </ProtectedRoute>
     );
 }
-

@@ -3,8 +3,10 @@
 
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link'; // Import Link for navigation
 import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, collection, query, where, getDocs, writeBatch, FieldValue, deleteField } from 'firebase/firestore'; // Import FieldValue and deleteField
-import { db } from '@/lib/firebase';
+import { sendPasswordResetEmail } from 'firebase/auth'; // Import for password reset (invitation flow)
+import { db, auth } from '@/lib/firebase'; // Correctly import auth
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, UserPlus, Trash2, Mail, Crown, Users, UserCog, ShieldCheck, Star, UserX } from 'lucide-react'; // Added UserX for remove
+import { Loader2, UserPlus, Trash2, Mail, Crown, Users, UserCog, ShieldCheck, Star, UserX, ArrowLeft, Pencil, Save, X as CancelIcon } from 'lucide-react'; // Added UserX, ArrowLeft, Pencil, Save, CancelIcon
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Added Select
@@ -41,6 +43,12 @@ function TeamPageContent() {
   const [isUpdatingScrumMaster, setIsUpdatingScrumMaster] = useState(false); // Track scrum master update
   const [error, setError] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null); // Specific error for invite form
+
+  // State for editing team name
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedTeamName, setEditedTeamName] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
+
 
   // Calculate if the current user is Owner or Manager based on fetched teamData
   const currentUserRole = teamData?.memberRoles?.[currentUser?.uid ?? ''] ?? null;
@@ -72,8 +80,10 @@ function TeamPageContent() {
                      router.push('/'); // Consider redirecting to a more appropriate page like /teams or /dashboard
                      return;
                 }
-               setTeamData({ id: teamDocSnap.id, ...data, members: membersList, memberRoles }); // Include validated members and memberRoles
-               setLoadingTeam(false);
+                const teamResult = { id: teamDocSnap.id, ...data, members: membersList, memberRoles };
+                setTeamData(teamResult);
+                setEditedTeamName(teamResult.name); // Initialize edited name
+                setLoadingTeam(false);
            } else {
                setError('Team not found.');
                toast({ title: 'Error', description: 'Team not found.', variant: 'destructive' });
@@ -221,6 +231,40 @@ function TeamPageContent() {
     }
   }, [teamData, fetchTeamMembers, error]);
 
+  // Handler for saving edited team name
+  const handleSaveTeamName = async () => {
+    if (!canManageTeam || !teamData || !editedTeamName.trim() || editedTeamName.trim() === teamData.name) {
+        if (!canManageTeam) toast({ title: "Permission Denied", description: "Only Owner or Manager can edit the team name.", variant: "destructive" });
+        if (editedTeamName.trim() === teamData?.name) setIsEditingName(false); // If no change, just cancel edit
+        return;
+    }
+
+    setIsSavingName(true);
+    try {
+        const teamDocRef = doc(db, 'teams', teamData.id);
+        await updateDoc(teamDocRef, {
+            name: editedTeamName.trim()
+        });
+        toast({ title: "Team Name Updated", description: `Team name changed to "${editedTeamName.trim()}".` });
+        setIsEditingName(false);
+        await fetchTeamData(); // Refetch data to show the update
+    } catch (err: any) {
+        console.error('Error updating team name:', err);
+        toast({ title: "Update Failed", description: "Could not update team name.", variant: "destructive" });
+    } finally {
+        setIsSavingName(false);
+    }
+  };
+
+  // Handler for cancelling team name edit
+  const handleCancelEditName = () => {
+    setIsEditingName(false);
+    if (teamData) {
+        setEditedTeamName(teamData.name); // Reset to original name
+    }
+  };
+
+
   const handleInviteMember = async (e: FormEvent) => {
     e.preventDefault();
     // Only owner or manager can invite
@@ -248,16 +292,30 @@ function TeamPageContent() {
 
         if (querySnapshot.empty) {
             // --- User Does Not Exist ---
-            // Inform the inviter that the user needs to sign up first.
-            // Sending emails directly from the client-side is generally not recommended
-            // due to security risks and complexity (requires backend/functions).
-            setInviteError(`User with email ${emailToInvite} not found. Please ask them to sign up for RetroSpectify first.`);
-            toast({
-                title: 'User Not Found',
-                description: `Ask ${emailToInvite} to sign up before inviting them. Email invitations for non-users are not currently supported.`,
-                variant: 'default',
-                duration: 7000
-            });
+            // Attempt to send a password reset email, which works as an invite for non-existent users
+            try {
+                await sendPasswordResetEmail(auth, emailToInvite, {
+                   url: `${window.location.origin}/login?teamId=${teamData.id}&invite=true`, // Include teamId for post-signup/login action
+                   handleCodeInApp: false, // Let Firebase handle the password reset flow
+                });
+                 toast({
+                     title: 'Invitation Sent',
+                     description: `An invitation email has been sent to ${emailToInvite}. They need to set up their account to join.`,
+                     variant: 'default',
+                     duration: 7000
+                 });
+                 setInviteEmail(''); // Clear input
+
+            } catch (emailError: any) {
+                 console.error('Error sending invitation/password reset email:', emailError);
+                 // Handle specific auth errors if needed (e.g., invalid email format)
+                 let description = 'Could not send invitation email. Please check the address and try again.';
+                 if (emailError.code === 'auth/invalid-email') {
+                     description = 'Invalid email address format.';
+                 }
+                 setInviteError(description);
+                 toast({ title: 'Invite Failed', description: description, variant: 'destructive' });
+            }
 
             setIsInviting(false);
             return;
@@ -491,13 +549,57 @@ function TeamPageContent() {
 
   return (
     <div className="container mx-auto p-4 md:p-8">
+        <header className="mb-8 flex justify-between items-center">
+            {/* Back Button */}
+            <Button variant="outline" size="sm" onClick={() => router.back()}>
+                <ArrowLeft className="mr-2 h-4 w-4" /> Back
+            </Button>
+            {/* Optional: Maybe add a main "Teams" link */}
+            <Link href="/teams" passHref>
+                 <Button variant="ghost" size="sm">My Teams</Button>
+            </Link>
+        </header>
+
       <Card className="mb-8 shadow-lg">
         <CardHeader>
-          <CardTitle className="text-2xl font-bold text-primary flex items-center">
-            <Users className="mr-3 h-6 w-6" />
-            Team: {teamData.name}
-          </CardTitle>
-          <CardDescription>Manage your team members and roles.</CardDescription>
+           <div className="flex justify-between items-start gap-4">
+               <div>
+                    {isEditingName ? (
+                        <div className="flex items-center gap-2">
+                            <Input
+                                value={editedTeamName}
+                                onChange={(e) => setEditedTeamName(e.target.value)}
+                                className="text-2xl font-bold h-10"
+                                disabled={isSavingName}
+                                maxLength={50}
+                                autoFocus
+                            />
+                            <Button size="sm" onClick={handleSaveTeamName} disabled={isSavingName || !editedTeamName.trim() || editedTeamName.trim() === teamData.name}>
+                                {isSavingName ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                <span className="sr-only">Save</span>
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={handleCancelEditName} disabled={isSavingName}>
+                                <CancelIcon className="h-4 w-4" />
+                                <span className="sr-only">Cancel</span>
+                            </Button>
+                        </div>
+                    ) : (
+                        <CardTitle className="text-2xl font-bold text-primary flex items-center">
+                            <Users className="mr-3 h-6 w-6 flex-shrink-0" />
+                            <span className="flex-grow">{teamData.name}</span>
+                            {/* Edit Button for Name (Manager/Owner) */}
+                            {canManageTeam && (
+                                <Button variant="ghost" size="icon" className="ml-2 h-7 w-7" onClick={() => setIsEditingName(true)}>
+                                    <Pencil className="h-4 w-4" />
+                                    <span className="sr-only">Edit team name</span>
+                                </Button>
+                            )}
+                        </CardTitle>
+                    )}
+                   <CardDescription>Manage your team members and roles.</CardDescription>
+               </div>
+               {/* Removed edit button from here */}
+           </div>
         </CardHeader>
       </Card>
 
@@ -683,7 +785,7 @@ function TeamPageContent() {
            <Card>
              <CardHeader>
                <CardTitle className="text-xl flex items-center"><UserPlus className="mr-2 h-5 w-5"/> Invite New Member</CardTitle>
-               <CardDescription>Enter the email address of the user you want to add. They must already have a RetroSpectify account.</CardDescription>
+               <CardDescription>Enter the email address of the user you want to add. If they don't have an account, an invite will be sent.</CardDescription>
              </CardHeader>
              <form onSubmit={handleInviteMember}>
                <CardContent className="space-y-4">
@@ -701,7 +803,7 @@ function TeamPageContent() {
                      />
                     <Button type="submit" disabled={isInviting || !inviteEmail.trim()} className="w-full sm:w-auto flex-shrink-0">
                         {isInviting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
-                        {isInviting ? 'Adding...' : 'Add Member'}
+                        {isInviting ? 'Adding/Inviting...' : 'Add / Invite Member'}
                     </Button>
                  </div>
                  {inviteError && <p className="text-sm text-destructive pt-1">{inviteError}</p>}
