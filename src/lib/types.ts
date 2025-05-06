@@ -75,4 +75,8 @@ export interface AdminUserDisplay extends User {
     // No teamRole needed here as it's app-wide management
 }
 
-
+// Global application configuration
+export interface GlobalConfig {
+  id: 'global'; // Document ID, always 'global'
+  isDemoModeEnabled: boolean;
+}

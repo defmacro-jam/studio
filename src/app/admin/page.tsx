@@ -13,7 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 // Dialog components removed as modal is removed
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, UserCog, UserX, ArrowLeft, ShieldCheck, Users, ShieldAlert, Trash2, Eye, Home } from 'lucide-react'; // Removed Pencil, Save, CancelIcon, added Eye, Home
+import { Loader2, UserCog, UserX, ArrowLeft, ShieldCheck, Users, ShieldAlert, Trash2, Eye, Home, Settings } from 'lucide-react'; // Added Settings icon
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 // Select components removed as role editing moved
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -232,7 +232,7 @@ function AdminPageContent() {
   // Main content for Admins
   return (
     <div className="container mx-auto p-4 md:p-8">
-      <header className="mb-8 flex justify-between items-center">
+      <header className="mb-8 flex flex-wrap justify-between items-center gap-4">
         {/* Home Button */}
         <Button variant="outline" size="sm" onClick={() => router.push('/')}>
           <Home className="mr-2 h-4 w-4" /> Home
@@ -240,8 +240,14 @@ function AdminPageContent() {
         <h1 className="text-2xl font-bold text-primary flex items-center">
             <UserCog className="mr-3 h-6 w-6" /> User Management
         </h1>
-         {/* Placeholder for potential future actions */}
-         <div></div>
+         {/* Link to App Settings */}
+         <div>
+            <Link href="/admin/settings" passHref>
+                <Button variant="outline" size="sm">
+                    <Settings className="mr-2 h-4 w-4" /> App Settings
+                </Button>
+            </Link>
+         </div>
       </header>
 
       <Card>

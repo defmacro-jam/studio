@@ -6,8 +6,8 @@ import { useState, useEffect, useMemo, useCallback, type DragEvent } from 'react
 import { useRouter } from 'next/navigation'; // Import useRouter
 import Link from 'next/link'; // Import Link
 import { signOut } from 'firebase/auth'; // Import signOut
-import { doc, getDoc } from 'firebase/firestore'; // Import Firestore functions
-import type { RetroItem, PollResponse, User, Category, AppRole } from '@/lib/types'; // Added AppRole
+import { doc, getDoc, onSnapshot } from 'firebase/firestore'; // Import Firestore functions
+import type { RetroItem, PollResponse, User, Category, AppRole, GlobalConfig } from '@/lib/types'; // Added AppRole, GlobalConfig
 import { PollSection } from '@/components/retrospectify/PollSection';
 import { PollResultsSection } from '@/components/retrospectify/PollResultsSection';
 import { RetroSection } from '@/components/retrospectify/RetroSection';
@@ -20,7 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardHeader, CardContent, CardFooter, CardDescription, CardTitle } from '@/components/ui/card'; // Added CardTitle
 import { Button } from '@/components/ui/button'; // Import Button
-import { Users, LogOut, ShieldCheck, Info } from 'lucide-react'; // Import Users, LogOut, ShieldCheck, Info icons
+import { Users, LogOut, ShieldCheck, Info, Settings } from 'lucide-react'; // Import Users, LogOut, ShieldCheck, Info, Settings icons
 import ProtectedRoute from '@/components/auth/ProtectedRoute'; // Import ProtectedRoute
 import { useAuth } from '@/context/AuthContext'; // Import useAuth
 import { auth, db } from '@/lib/firebase'; // Import auth and db
@@ -82,8 +82,27 @@ function RetroSpectifyPageContent() {
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [isAdjustRatingModalOpen, setIsAdjustRatingModalOpen] = useState(false);
   const [ratingAdjustmentProps, setRatingAdjustmentProps] = useState<{ itemIdToAdjust: string, currentRating: number; suggestedRating: number } | null>(null);
+  const [isDemoMode, setIsDemoMode] = useState(false); // State for demo mode
 
   const { toast } = useToast();
+
+  // Listen for demo mode changes
+  useEffect(() => {
+    const configDocRef = doc(db, 'config', 'global');
+    const unsubscribe = onSnapshot(configDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const configData = docSnap.data() as GlobalConfig;
+        setIsDemoMode(configData.isDemoModeEnabled);
+      } else {
+        setIsDemoMode(false); // Default to false if doc doesn't exist
+      }
+    }, (error) => {
+      console.error("Error listening to demo mode config:", error);
+      setIsDemoMode(false); // Fallback on error
+    });
+
+    return () => unsubscribe(); // Cleanup listener
+  }, []);
 
 
   // Fetch user data from Firestore and initial retro/poll data
@@ -134,10 +153,10 @@ function RetroSpectifyPageContent() {
          // TODO: Fetch pollResponses for the current team/user scope from Firestore
 
           // Inject the admin user into mock data if it doesn't exist (for testing)
-          let initialItems = mockInitialItems;
-          let initialPolls = mockInitialPollResponses;
+          let initialItems = isDemoMode ? mockInitialItems : [];
+          let initialPolls = isDemoMode ? mockInitialPollResponses : [];
 
-          if (resolvedUser.role === APP_ROLES.ADMIN && !initialItems.some(item => item.author.id === resolvedUser.id)) {
+          if (isDemoMode && resolvedUser.role === APP_ROLES.ADMIN && !initialItems.some(item => item.author.id === resolvedUser.id)) {
                 // Add some items for the admin if they don't exist
                 initialItems = [
                   ...initialItems,
@@ -145,7 +164,7 @@ function RetroSpectifyPageContent() {
                   { id: 'admin-d1', author: resolvedUser, content: 'Admin: Discuss project alpha status.', timestamp: new Date(), category: 'discuss' },
                 ];
           }
-          if (resolvedUser.role === APP_ROLES.ADMIN && !initialPolls.some(poll => poll.author.id === resolvedUser.id)) {
+          if (isDemoMode && resolvedUser.role === APP_ROLES.ADMIN && !initialPolls.some(poll => poll.author.id === resolvedUser.id)) {
              // Add a poll response for the admin if they don't exist
              initialPolls = [
                 ...initialPolls,
@@ -154,8 +173,8 @@ function RetroSpectifyPageContent() {
           }
 
 
-         setRetroItems(initialItems); // Using updated mock
-         setPollResponses(initialPolls); // Using updated mock
+         setRetroItems(initialItems); // Using updated mock based on demo mode
+         setPollResponses(initialPolls); // Using updated mock based on demo mode
 
          // Check if current user has submitted a poll response based on fetched data
           const userResponseExists = initialPolls.some(resp => resp.author.id === currentUser.uid);
@@ -175,7 +194,7 @@ function RetroSpectifyPageContent() {
      };
 
      fetchData();
-  }, [currentUser, toast]); // Depend on currentUser
+  }, [currentUser, toast, isDemoMode]); // Depend on currentUser and isDemoMode
 
 
   // Recalculate hasSubmitted if pollResponses change
