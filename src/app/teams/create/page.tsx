@@ -1,10 +1,10 @@
 
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link'; // Import Link
-import { collection, addDoc, serverTimestamp, doc, updateDoc, arrayUnion, writeBatch } from 'firebase/firestore'; // Import writeBatch
+import { collection, addDoc, serverTimestamp, doc, updateDoc, arrayUnion, writeBatch, query, where, getDocs, documentId } from 'firebase/firestore'; // Import query, where, getDocs, documentId
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -20,9 +20,41 @@ function CreateTeamPageContent() {
   const [teamName, setTeamName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [existingTeamNames, setExistingTeamNames] = useState<string[]>([]); // State for existing team names
   const { currentUser } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
+
+    // Fetch existing team names for the current user
+    useEffect(() => {
+        const fetchExistingTeams = async () => {
+            if (!currentUser) return;
+            setLoading(true); // Indicate loading while fetching existing names
+            try {
+                 const userDocRef = doc(db, 'users', currentUser.uid);
+                 const userDocSnap = await getDoc(userDocRef);
+                 if (userDocSnap.exists()) {
+                     const userData = userDocSnap.data();
+                     const teamIds = userData.teams || [];
+                     if (teamIds.length > 0) {
+                         // Fetch names of teams user is already in
+                         const teamsQuery = query(collection(db, 'teams'), where(documentId(), 'in', teamIds));
+                         const querySnapshot = await getDocs(teamsQuery);
+                         const names = querySnapshot.docs.map(doc => (doc.data().name as string).toLowerCase());
+                         setExistingTeamNames(names);
+                     }
+                 }
+            } catch (err) {
+                 console.error("Error fetching existing team names:", err);
+                 // Optionally show a toast if fetching names fails
+                 // toast({ title: "Warning", description: "Could not check for existing team names.", variant: "default" });
+            } finally {
+                 setLoading(false); // Done loading existing names
+            }
+        };
+        fetchExistingTeams();
+    }, [currentUser]);
+
 
   const handleCreateTeam = async (e: FormEvent) => {
     e.preventDefault();
@@ -31,18 +63,26 @@ function CreateTeamPageContent() {
       toast({ title: 'Authentication Required', description: 'Please log in.', variant: 'destructive' });
       return;
     }
-    if (!teamName.trim()) {
+    const trimmedTeamName = teamName.trim();
+    if (!trimmedTeamName) {
         setError('Team name cannot be empty.');
         toast({ title: 'Invalid Name', description: 'Please enter a team name.', variant: 'destructive' });
         return;
     }
+
+     // Check for duplicate team name (case-insensitive)
+     if (existingTeamNames.includes(trimmedTeamName.toLowerCase())) {
+         setError(`You are already in a team named "${trimmedTeamName}".`);
+         toast({ title: 'Duplicate Name', description: `A team with this name already exists in your list.`, variant: 'destructive' });
+         return;
+     }
+
 
     setLoading(true);
     setError(null);
 
     try {
         const batch = writeBatch(db);
-        const trimmedTeamName = teamName.trim();
 
         // 1. Generate the team document reference first to get its ID
         const teamDocRef = doc(collection(db, 'teams'));
@@ -109,7 +149,17 @@ function CreateTeamPageContent() {
                 type="text"
                 placeholder="e.g., The A-Team"
                 value={teamName}
-                onChange={(e) => setTeamName(e.target.value)}
+                onChange={(e) => {
+                    setTeamName(e.target.value);
+                    // Clear error when user types
+                    if (error) setError(null);
+                    // Check for duplicates dynamically (optional, can be noisy)
+                    // if (existingTeamNames.includes(e.target.value.trim().toLowerCase())) {
+                    //     setError(`You are already in a team named "${e.target.value.trim()}".`);
+                    // } else {
+                    //     setError(null);
+                    // }
+                }}
                 required
                 disabled={loading}
                 maxLength={50} // Optional: Limit team name length
@@ -132,7 +182,7 @@ function CreateTeamPageContent() {
             <Button
                 type="submit"
                 className="w-full sm:w-auto flex-grow" // Adjust width and allow growth
-                disabled={loading || !teamName.trim()}
+                disabled={loading || !teamName.trim() || existingTeamNames.includes(teamName.trim().toLowerCase())} // Disable if name exists
             >
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Users className="mr-2 h-4 w-4"/>}
               {loading ? 'Creating Team...' : 'Create Team'}

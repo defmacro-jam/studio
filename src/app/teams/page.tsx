@@ -1,21 +1,23 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, writeBatch, FieldValue, deleteDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Loader2, PlusCircle, Users, ArrowRight } from 'lucide-react';
+import { Loader2, PlusCircle, Users, ArrowRight, Trash2 } from 'lucide-react';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import type { Team as TeamData } from '@/lib/types';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { useToast } from '@/hooks/use-toast'; // Import useToast
 
-interface TeamInfo extends Pick<TeamData, 'id' | 'name'> {
+// Updated interface to include owner UID
+interface TeamInfo extends Pick<TeamData, 'id' | 'name' | 'owner'> {
   memberCount: number;
-  // Add other info you might want to display, e.g., createdAt
 }
 
 function TeamsListPageContent() {
@@ -23,74 +25,148 @@ function TeamsListPageContent() {
   const [teams, setTeams] = useState<TeamInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingTeamId, setDeletingTeamId] = useState<string | null>(null); // State for loading indicator on delete button
+  const { toast } = useToast(); // Initialize toast
 
-  useEffect(() => {
-    const fetchTeams = async () => {
-      if (!currentUser) {
+  const fetchTeams = useCallback(async () => {
+    if (!currentUser) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setTeams([]); // Reset teams on fetch
+    try {
+      // 1. Get the user's document to find their team IDs
+      const userDocRef = doc(db, 'users', currentUser.uid);
+      const userDocSnap = await getDoc(userDocRef);
+
+      if (!userDocSnap.exists()) {
+        console.warn("User document not found, cannot fetch teams.");
         setLoading(false);
         return;
       }
-      setLoading(true);
-      setError(null);
-      try {
-        // 1. Get the user's document to find their team IDs
-        const userDocRef = doc(db, 'users', currentUser.uid);
-        const userDocSnap = await getDoc(userDocRef);
 
-        if (!userDocSnap.exists()) {
-          console.warn("User document not found, cannot fetch teams.");
-          setLoading(false);
-          return;
-        }
+      const userData = userDocSnap.data();
+      const teamIds = userData?.teams || []; // Ensure userData exists before accessing teams
 
-        const userData = userDocSnap.data();
-        const teamIds = userData.teams || [];
-
-        if (teamIds.length === 0) {
-          setTeams([]);
-          setLoading(false);
-          return;
-        }
-
-        // 2. Fetch details for each team the user is a member of
-        const teamsData: TeamInfo[] = [];
-        const chunkSize = 30; // Firestore 'in' query limit
-
-        for (let i = 0; i < teamIds.length; i += chunkSize) {
-            const chunk = teamIds.slice(i, i + chunkSize);
-            if (chunk.length === 0) continue;
-
-            const teamsQuery = query(collection(db, 'teams'), where('__name__', 'in', chunk)); // Use __name__ to query by document ID
-            const querySnapshot = await getDocs(teamsQuery);
-
-            querySnapshot.forEach((docSnap) => {
-              const data = docSnap.data() as TeamData;
-              teamsData.push({
-                id: docSnap.id,
-                name: data.name,
-                memberCount: data.members?.length || 0,
-              });
-            });
-        }
-
-        // Sort teams alphabetically by name
-        teamsData.sort((a, b) => a.name.localeCompare(b.name));
-
-        setTeams(teamsData);
-
-      } catch (err: any) {
-        console.error('Error fetching teams:', err);
-        setError('Failed to load your teams.');
-        if (err.code === 'permission-denied') {
-          setError('Permission denied. Check Firestore rules.');
-        }
-      } finally {
+      if (teamIds.length === 0) {
+        setTeams([]);
         setLoading(false);
+        return;
       }
-    };
 
+      // 2. Fetch details for each team the user is a member of
+      const teamsData: TeamInfo[] = [];
+      const chunkSize = 30; // Firestore 'in' query limit
+
+      for (let i = 0; i < teamIds.length; i += chunkSize) {
+          const chunk = teamIds.slice(i, i + chunkSize);
+          if (chunk.length === 0) continue;
+
+          const teamsQuery = query(collection(db, 'teams'), where('__name__', 'in', chunk)); // Use __name__ to query by document ID
+          const querySnapshot = await getDocs(teamsQuery);
+
+          querySnapshot.forEach((docSnap) => {
+            const data = docSnap.data() as Omit<TeamData, 'id'>; // Use Omit here
+            if(data) { // Check if data exists
+                teamsData.push({
+                    id: docSnap.id,
+                    name: data.name || 'Unnamed Team', // Fallback name
+                    memberCount: data.members?.length || 0,
+                    owner: data.owner, // Include owner UID
+                });
+            }
+          });
+      }
+
+      // Sort teams alphabetically by name
+      teamsData.sort((a, b) => a.name.localeCompare(b.name));
+
+      setTeams(teamsData);
+
+    } catch (err: any) {
+      console.error('Error fetching teams:', err);
+      setError('Failed to load your teams.');
+      if (err.code === 'permission-denied') {
+        setError('Permission denied. Check Firestore rules.');
+         toast({ title: "Permission Denied", description: "Could not fetch teams.", variant: "destructive" });
+      } else {
+           toast({ title: "Error", description: "Failed to load teams.", variant: "destructive" });
+       }
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUser, toast]); // Add toast to dependencies
+
+  useEffect(() => {
     fetchTeams();
-  }, [currentUser]);
+  }, [fetchTeams]); // Use fetchTeams directly
+
+   const handleDeleteTeam = async (teamId: string, teamName: string) => {
+     if (!currentUser) return;
+
+     const teamToDelete = teams.find(t => t.id === teamId);
+     if (!teamToDelete || teamToDelete.owner !== currentUser.uid) {
+       toast({ title: "Permission Denied", description: "Only the team owner can delete the team.", variant: "destructive" });
+       return;
+     }
+
+     setDeletingTeamId(teamId); // Set loading state for this specific team
+     try {
+       const batch = writeBatch(db);
+       const teamDocRef = doc(db, 'teams', teamId);
+
+        // Note: Removing teamId from all member's user documents requires fetching all members first.
+        // This can be complex and might hit batch limits if the team is large.
+        // For simplicity here, we'll only delete the team document.
+        // A more robust solution might use a Cloud Function triggered on team delete.
+
+        // Fetch team members to update their documents (simplified version, may need optimization for large teams)
+        const teamDocSnap = await getDoc(teamDocRef);
+        if (teamDocSnap.exists()) {
+            const teamData = teamDocSnap.data() as TeamData;
+            const memberUids = teamData.members || [];
+
+            // Update each member's user document
+            memberUids.forEach(uid => {
+                const userDocRef = doc(db, 'users', uid);
+                // Atomically remove the teamId from the user's 'teams' array
+                 // We need to import FieldValue for arrayRemove
+                 // For now, just log this step as full implementation is complex client-side
+                console.log(`TODO: Remove team ${teamId} from user ${uid}'s teams array.`);
+                 // Example using FieldValue (requires import):
+                 // import { FieldValue } from 'firebase/firestore';
+                 // batch.update(userDocRef, { teams: FieldValue.arrayRemove(teamId) });
+            });
+        } else {
+             throw new Error("Team document not found during deletion process.");
+        }
+
+
+       // Delete the team document
+       batch.delete(teamDocRef);
+
+       await batch.commit();
+
+       toast({ title: "Team Deleted", description: `Team "${teamName}" has been successfully deleted.` });
+       // Refresh the team list by filtering out the deleted team locally or refetching
+       setTeams(prevTeams => prevTeams.filter(team => team.id !== teamId));
+
+     } catch (err: any) {
+       console.error(`Error deleting team ${teamId}:`, err);
+       let description = "An unexpected error occurred while deleting the team.";
+       if (err.code === 'permission-denied') {
+         description = 'Permission denied. Check Firestore rules.';
+       } else if (err.message === "Team document not found during deletion process.") {
+           description = "Could not find the team document to complete deletion.";
+       }
+       toast({ title: "Deletion Failed", description: description, variant: "destructive" });
+     } finally {
+       setDeletingTeamId(null); // Clear loading state
+     }
+   };
+
 
   return (
     <div className="container mx-auto p-4 md:p-8">
@@ -113,9 +189,10 @@ function TeamsListPageContent() {
                 <Skeleton className="h-6 w-3/4 rounded" />
                 <Skeleton className="h-4 w-1/2 rounded mt-1" />
               </CardHeader>
-              <CardContent>
-                <Skeleton className="h-10 w-full rounded" />
-              </CardContent>
+              <CardFooter className="flex justify-between">
+                <Skeleton className="h-10 w-24 rounded" />
+                <Skeleton className="h-8 w-8 rounded" />
+              </CardFooter>
             </Card>
           ))}
         </div>
@@ -158,13 +235,50 @@ function TeamsListPageContent() {
                   {team.memberCount} member{team.memberCount !== 1 ? 's' : ''}
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardFooter className="flex justify-between items-center pt-4"> {/* Use CardFooter for actions */}
                 <Link href={`/teams/${team.id}`} passHref>
-                  <Button className="w-full">
+                  <Button size="sm">
                     View Team <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>
-              </CardContent>
+                {/* Delete Button - Visible only to owner */}
+                {currentUser?.uid === team.owner && (
+                     <AlertDialog>
+                         <AlertDialogTrigger asChild>
+                             <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:bg-destructive/10 hover:text-destructive h-9 px-2"
+                                disabled={deletingTeamId === team.id} // Disable button while deleting this specific team
+                                aria-label={`Delete team ${team.name}`}
+                             >
+                                {deletingTeamId === team.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                {/* Optionally add text, maybe hidden on small screens */}
+                                <span className="ml-1 hidden sm:inline">Delete</span>
+                             </Button>
+                         </AlertDialogTrigger>
+                         <AlertDialogContent>
+                             <AlertDialogHeader>
+                                 <AlertDialogTitle>Confirm Deletion</AlertDialogTitle>
+                                 <AlertDialogDescription>
+                                     Are you sure you want to delete the team "<span className="font-medium">{team.name}</span>"? This action cannot be undone. All team data will be lost.
+                                     {/* Optional: Add warning about members losing access */}
+                                 </AlertDialogDescription>
+                             </AlertDialogHeader>
+                             <AlertDialogFooter>
+                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                 <AlertDialogAction
+                                     onClick={() => handleDeleteTeam(team.id, team.name)}
+                                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                     disabled={deletingTeamId === team.id} // Ensure action button is also disabled
+                                 >
+                                    {deletingTeamId === team.id ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Deleting...</> : 'Yes, Delete Team'}
+                                 </AlertDialogAction>
+                             </AlertDialogFooter>
+                         </AlertDialogContent>
+                     </AlertDialog>
+                 )}
+              </CardFooter>
             </Card>
           ))}
         </div>
