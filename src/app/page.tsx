@@ -17,7 +17,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Card, CardHeader, CardContent, CardFooter } from '@/components/ui/card';
+import { Card, CardHeader, CardContent, CardFooter, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button'; // Import Button
 import { LogOut } from 'lucide-react'; // Import LogOut icon
 import ProtectedRoute from '@/components/auth/ProtectedRoute'; // Import ProtectedRoute
@@ -27,17 +27,19 @@ import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
 
 // Mock initial data - replace with API/DB calls later
 // Helper function to generate mock users with Gravatar fallbacks
-const generateMockUser = (id: string, name: string, emailSuffix: string): User => {
+const generateMockUser = (id: string, name: string, emailSuffix: string, role: 'admin' | 'member' = 'member'): User => {
     const email = `${name.toLowerCase().replace(' ', '.')}${emailSuffix}@example.com`;
     return {
         id: id,
         name: name,
         email: email,
         avatarUrl: getGravatarUrl(email, 100)!, // Use Gravatar, assuming it won't be null
+        role: role,
     };
 };
 
-const mockUserAlex = generateMockUser('user-123', 'Alex Doe', '');
+// Make Alex Doe an admin for testing purposes
+const mockUserAlex = generateMockUser('user-123', 'Alex Doe', '', 'admin');
 const mockUserBob = generateMockUser('user-456', 'Bob Smith', '1');
 const mockUserCharlie = generateMockUser('user-789', 'Charlie Brown', '2');
 const mockUserDana = generateMockUser('user-555', 'Dana Scully', '3');
@@ -94,10 +96,11 @@ function RetroSpectifyPageContent() {
            const userDocRef = doc(db, 'users', currentUser.uid);
            const userDocSnap = await getDoc(userDocRef);
 
+           let resolvedUser: User;
            if (userDocSnap.exists()) {
                 const userData = userDocSnap.data();
                  // Construct the User object
-                 const resolvedUser: User = {
+                 resolvedUser = {
                     id: currentUser.uid,
                     name: currentUser.displayName || userData.displayName || currentUser.email?.split('@')[0] || 'User',
                     email: currentUser.email || userData.email || 'unknown@example.com', // Ensure email exists
@@ -105,28 +108,51 @@ function RetroSpectifyPageContent() {
                     avatarUrl: userData.avatarUrl || currentUser.photoURL || getGravatarUrl(currentUser.email, 100)!,
                     role: userData.role || 'member', // Include role if available
                  };
-                setAppUser(resolvedUser);
            } else {
                // Handle case where user exists in Auth but not Firestore (create basic user object)
                console.warn("User document not found in Firestore for UID:", currentUser.uid);
                const fallbackEmail = currentUser.email || `${currentUser.uid}@example.com`; // Create a fallback email
-               setAppUser({
+               resolvedUser = {
                   id: currentUser.uid,
                   name: currentUser.displayName || fallbackEmail.split('@')[0] || 'User',
                   email: fallbackEmail,
                   avatarUrl: currentUser.photoURL || getGravatarUrl(fallbackEmail, 100)!, // Use photoURL or generate Gravatar
                   role: 'member', // Default role
-               });
+               };
            }
+           setAppUser(resolvedUser);
+
 
          // --- Replace Mock Data Fetching with Real DB Calls ---
          // TODO: Fetch retroItems for the current team/user scope from Firestore
          // TODO: Fetch pollResponses for the current team/user scope from Firestore
-         setRetroItems(mockInitialItems); // Using mock for now
-         setPollResponses(mockInitialPollResponses); // Using mock for now
+
+          // Inject the admin user into mock data if it doesn't exist (for testing)
+          let initialItems = mockInitialItems;
+          let initialPolls = mockInitialPollResponses;
+
+          if (resolvedUser.role === 'admin' && !initialItems.some(item => item.author.id === resolvedUser.id)) {
+                // Add some items for the admin if they don't exist
+                initialItems = [
+                  ...initialItems,
+                  { id: 'admin-w1', author: resolvedUser, content: 'Admin: Things look good!', timestamp: new Date(), category: 'well' },
+                  { id: 'admin-d1', author: resolvedUser, content: 'Admin: Discuss project alpha status.', timestamp: new Date(), category: 'discuss' },
+                ];
+          }
+          if (resolvedUser.role === 'admin' && !initialPolls.some(poll => poll.author.id === resolvedUser.id)) {
+             // Add a poll response for the admin if they don't exist
+             initialPolls = [
+                ...initialPolls,
+                { id: 'admin-p1', author: resolvedUser, rating: 4, justification: "Admin's perspective: Mostly positive.", timestamp: new Date() },
+             ];
+          }
+
+
+         setRetroItems(initialItems); // Using updated mock
+         setPollResponses(initialPolls); // Using updated mock
 
          // Check if current user has submitted a poll response based on fetched data
-          const userResponseExists = mockInitialPollResponses.some(resp => resp.author.id === currentUser.uid);
+          const userResponseExists = initialPolls.some(resp => resp.author.id === currentUser.uid);
          setHasSubmitted(userResponseExists);
 
 
@@ -164,11 +190,12 @@ function RetroSpectifyPageContent() {
 
   // Derived state for showing poll/results
   const shouldShowResults = useMemo(() => {
-    return hasSubmitted && !isEditingPoll;
+    // Default to closed unless editing
+     return !isEditingPoll && hasSubmitted; // Show results only if submitted and not editing
   }, [hasSubmitted, isEditingPoll]);
 
   const shouldShowPollForm = useMemo(() => {
-      return !hasSubmitted || isEditingPoll;
+      return !hasSubmitted || isEditingPoll; // Show form if not submitted OR editing
   }, [hasSubmitted, isEditingPoll]);
 
 
@@ -211,10 +238,7 @@ function RetroSpectifyPageContent() {
 
       // If justification exists, call the categorization AI
       try {
-          // console.log("Calling categorizeJustification with:", { rating, justification });
           const categorizedSentences = await categorizeJustification({ rating, justification });
-          // console.log("Categorization result:", categorizedSentences);
-
 
           if (categorizedSentences && categorizedSentences.length > 0) {
             const newItems: RetroItem[] = categorizedSentences.map((categorizedSentence, index) => ({
@@ -361,6 +385,28 @@ function RetroSpectifyPageContent() {
       });
   }, [appUser, toast]); // Depend on appUser
 
+  // --- Edit Item Handler ---
+  const handleEditItem = useCallback((itemId: string, newContent: string) => {
+    if (!appUser) return; // Ensure appUser is loaded
+
+    setRetroItems(prev =>
+        prev.map(item => {
+            if (item.id === itemId) {
+                // Permission check: Author or Admin
+                const canEdit = item.author.id === appUser.id || appUser.role === 'admin';
+                if (!canEdit) {
+                    toast({ title: "Cannot Edit", description: "You don't have permission to edit this item.", variant: "destructive" });
+                    return { ...item, editing: false }; // Revert editing state if UI was toggled prematurely
+                }
+                 // TODO: Update item content in DB
+                 toast({ title: "Item Updated", description: "Changes saved." });
+                return { ...item, content: newContent, timestamp: new Date(), editing: false }; // Update content and timestamp, turn off editing state
+            }
+            return item;
+        })
+    );
+  }, [appUser, toast]); // Depend on appUser
+
   // Handle generating a new action item from a discussion topic
   const handleGenerateActionItem = useCallback(async (discussionItemId: string) => {
       if (!appUser) return; // Ensure appUser is loaded
@@ -371,6 +417,14 @@ function RetroSpectifyPageContent() {
           toast({ title: "Error", description: "Could not find the discussion topic or it's not a discussion item.", variant: "destructive" });
           return;
       }
+
+      // Permission check: Only author or admin can generate action from discussion
+      const canGenerate = discussionItem.author.id === appUser.id || appUser.role === 'admin';
+       if (!canGenerate) {
+            toast({ title: "Permission Denied", description: "Only the author or an admin can generate an action item from this discussion.", variant: "destructive" });
+            return;
+        }
+
 
       toast({ title: "Generating Action Item...", description: "Please wait.", variant: "default" });
 
@@ -445,19 +499,21 @@ function RetroSpectifyPageContent() {
      const itemToDelete = retroItems.find(item => item.id === itemId);
      if (!itemToDelete) return;
 
-     // Basic permission check: Can only delete own items
-     if (itemToDelete.author.id !== appUser.id) {
+     // Permission check: Author or Admin
+     const canDelete = itemToDelete.author.id === appUser.id || appUser.role === 'admin';
+
+     if (!canDelete) {
           toast({
              title: "Cannot Delete",
-             description: "You can only delete your own items.",
+             description: "You don't have permission to delete this item.",
              variant: "destructive"
           });
           return;
      }
 
      // Prevent deleting items generated from the current user's *uneditable* poll response
-     // Allow deletion if the poll is currently being edited
-     if (itemToDelete.isFromPoll && itemToDelete.author.id === appUser.id && !isEditingPoll) {
+     // Allow deletion if the poll is currently being edited OR if user is admin
+     if (itemToDelete.isFromPoll && itemToDelete.author.id === appUser.id && !isEditingPoll && appUser.role !== 'admin') {
          toast({
             title: "Cannot Delete Poll Item",
             description: "Edit your poll response to change items derived from it, or delete the entire response.",
@@ -477,16 +533,14 @@ function RetroSpectifyPageContent() {
 
    // --- Drag and Drop Handlers ---
    const handleDragStart = useCallback((itemId: string) => {
-     // Check if the item being dragged belongs to the current user
      const item = retroItems.find(i => i.id === itemId);
-      if (item && item.author.id === appUser?.id) {
+      // Allow drag if user is admin OR is the author
+      if (item && (item.author.id === appUser?.id || appUser?.role === 'admin')) {
          setDraggingItemId(itemId);
      } else {
-          // Prevent dragging if item doesn't belong to user
+          // Prevent dragging if not allowed
          setDraggingItemId(null);
-         // Optional: Show a toast or visual feedback
-         // toast({ title: "Cannot Drag", description: "You can only move your own items.", variant: "destructive"});
-         console.log("Attempted to drag another user's item.");
+         console.log("Drag prevented: Not owner or admin.");
      }
    }, [retroItems, appUser]); // Add dependencies
 
@@ -499,11 +553,10 @@ function RetroSpectifyPageContent() {
         if (!appUser) {
              console.error("Cannot move item: User not loaded.");
              return;
-         } // Ensure appUser is loaded
+         }
 
         const itemToMove = retroItems.find(item => item.id === itemId);
 
-        // Check if item exists
         if (!itemToMove) {
             console.error("Cannot move item: Item not found.");
             toast({ title: "Move Error", description: "Item not found.", variant: "destructive" });
@@ -511,35 +564,34 @@ function RetroSpectifyPageContent() {
             return;
         }
 
-         // Check if the item belongs to the current user
-         if (itemToMove.author.id !== appUser.id) {
-             console.log("Prevented move: Item does not belong to user.");
+         // Permission check: Author or Admin
+         const canMove = itemToMove.author.id === appUser.id || appUser.role === 'admin';
+         if (!canMove) {
+             console.log("Prevented move: User does not have permission.");
              toast({
                  title: "Cannot Move Item",
-                 description: "You can only move your own items.",
+                 description: "You don't have permission to move this item.",
                  variant: "destructive"
              });
              setDraggingItemId(null); // Clear dragging state
              return;
          }
 
-        // Check if the category is actually changing
         if (itemToMove.category === targetCategory) {
             console.log("Move cancelled: Same category.");
-            setDraggingItemId(null); // No change, clear dragging state
+            setDraggingItemId(null);
             return;
         }
 
-        // *** Special Case: Moving from 'discuss' to 'action' ***
+        // Special Case: Moving from 'discuss' to 'action' triggers generation
         if (itemToMove.category === 'discuss' && targetCategory === 'action') {
             console.log("Triggering action item generation for:", itemId);
-            handleGenerateActionItem(itemId); // Trigger AI generation
-            // Don't move the original item, just generate a new one
+            handleGenerateActionItem(itemId); // Trigger AI generation (includes permission check)
             setDraggingItemId(null);
-            return; // Stop further processing for this specific case
+            return;
         }
 
-         // *** Restriction: Prevent moving *anything else* directly into 'action' ***
+         // Restriction: Prevent moving *anything else* directly into 'action'
          if (targetCategory === 'action' && itemToMove.category !== 'discuss') {
              console.log("Prevented move: Cannot move non-discussion to action.");
              toast({
@@ -548,36 +600,36 @@ function RetroSpectifyPageContent() {
                  variant: "destructive",
              });
              setDraggingItemId(null);
-             return; // Stop the move
+             return;
          }
 
-         // --- Check for moving between 'well' and 'improve' and prompt for rating adjustment ---
+         // Check for moving between 'well' and 'improve' AND if the item belongs to the current user
          const isWellToImprove = itemToMove.category === 'well' && targetCategory === 'improve';
          const isImproveToWell = itemToMove.category === 'improve' && targetCategory === 'well';
+         const userIsAuthor = itemToMove.author.id === appUser.id;
 
-         if ((isWellToImprove || isImproveToWell) && currentUserResponse) {
+         if ((isWellToImprove || isImproveToWell) && userIsAuthor && currentUserResponse) {
+             // Prompt for rating adjustment ONLY if the current user is the author
              const suggestedRating = isWellToImprove
-                 ? Math.max(1, currentUserResponse.rating - 1) // Decrease rating, min 1
-                 : Math.min(5, currentUserResponse.rating + 1); // Increase rating, max 5
+                 ? Math.max(1, currentUserResponse.rating - 1)
+                 : Math.min(5, currentUserResponse.rating + 1);
 
-             // Only show modal if suggested rating is different from current
              if (suggestedRating !== currentUserResponse.rating) {
-                console.log("Prompting for rating adjustment.");
+                console.log("Prompting for rating adjustment (author move).");
                 setRatingAdjustmentProps({
                     currentRating: currentUserResponse.rating,
                     suggestedRating: suggestedRating,
                 });
                 setIsAdjustRatingModalOpen(true);
-                 // Don't immediately move the item - wait for modal confirmation/cancellation
-                // The move happens *after* the modal interaction OR if no modal is needed
+                // Don't move immediately - wait for modal
              } else {
-                  console.log("Rating adjustment not needed, moving directly.");
-                 // Proceed with the move immediately if no rating change suggested
+                 console.log("Rating adjustment not needed (author move), moving directly.");
+                 // Proceed with move if no rating change needed
                  // TODO: Update item category in DB
                  setRetroItems(prev =>
                      prev.map(item =>
                          item.id === itemId
-                             ? { ...item, category: targetCategory, timestamp: new Date() } // Use serverTimestamp in DB
+                             ? { ...item, category: targetCategory, timestamp: new Date() }
                              : item
                      )
                  );
@@ -585,15 +637,16 @@ function RetroSpectifyPageContent() {
                      title: "Item Moved",
                      description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`
                  });
+                 setDraggingItemId(null); // Clear drag state
              }
          } else {
-             console.log("Moving item directly (not well<=>improve or no poll response).");
-             // --- Generic Move Logic (if not well<=>improve or no poll response) ---
+             // Generic Move Logic (admin move, non-well/improve move, or no poll response)
+             console.log("Moving item directly (admin, non-well/improve, or no poll response).");
              // TODO: Update item category in DB
              setRetroItems(prev =>
                  prev.map(item =>
                      item.id === itemId
-                         ? { ...item, category: targetCategory, timestamp: new Date() } // Use serverTimestamp in DB
+                         ? { ...item, category: targetCategory, timestamp: new Date() }
                          : item
                  )
              );
@@ -601,46 +654,46 @@ function RetroSpectifyPageContent() {
                  title: "Item Moved",
                  description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`
              });
+             setDraggingItemId(null); // Clear drag state
          }
 
-
-        setDraggingItemId(null); // Clear dragging state after initiating move or showing modal
+         // Note: setDraggingItemId(null) is called within each branch now
 
     }, [appUser, retroItems, toast, handleGenerateActionItem, currentUserResponse]); // Depend on appUser
 
+
     // Handler for AdjustRatingModal confirmation
     const handleAdjustRatingConfirm = useCallback((newRating: number) => {
-        if (!currentUserResponse || !appUser || !draggingItemId) return; // Ensure draggingItemId exists
+        if (!currentUserResponse || !appUser || !draggingItemId) return;
 
-         // Find the item that was being dragged (though draggingItemId should be correct)
          const itemToMove = retroItems.find(item => item.id === draggingItemId);
          if (!itemToMove) {
              console.error("Error adjusting rating: Original item not found.");
              setIsAdjustRatingModalOpen(false);
              setRatingAdjustmentProps(null);
-             setDraggingItemId(null); // Clear dragging state on error
+             setDraggingItemId(null);
              return;
          }
 
          // Determine the target category based on the direction of the move
          const targetCategory = itemToMove.category === 'well' ? 'improve' : 'well';
 
-         // 1. Update poll response rating in state and DB
+         // 1. Update poll response rating
          // TODO: Update poll response rating in DB
          setPollResponses(prev =>
              prev.map(resp =>
                  resp.id === currentUserResponse.id
-                     ? { ...resp, rating: newRating, timestamp: new Date() } // Use serverTimestamp in DB
+                     ? { ...resp, rating: newRating, timestamp: new Date() }
                      : resp
              )
          );
 
-         // 2. Move the retro item in state and DB
+         // 2. Move the retro item
          // TODO: Update item category in DB
          setRetroItems(prev =>
              prev.map(item =>
                  item.id === draggingItemId
-                     ? { ...item, category: targetCategory, timestamp: new Date() } // Use serverTimestamp
+                     ? { ...item, category: targetCategory, timestamp: new Date() }
                      : item
              )
          );
@@ -650,27 +703,25 @@ function RetroSpectifyPageContent() {
             description: `Your sentiment rating updated to ${newRating} stars and item moved.`,
         });
 
-        // 3. Close modal and clear states
         setIsAdjustRatingModalOpen(false);
         setRatingAdjustmentProps(null);
-        setDraggingItemId(null); // Ensure dragging state is cleared
+        setDraggingItemId(null);
 
-    }, [currentUserResponse, appUser, toast, draggingItemId, retroItems]); // Add draggingItemId and retroItems
+    }, [currentUserResponse, appUser, toast, draggingItemId, retroItems]);
 
-    // Handler for AdjustRatingModal cancellation - Move the item anyway, but don't change rating
+    // Handler for AdjustRatingModal cancellation
     const handleAdjustRatingCancel = useCallback(() => {
-         if (!draggingItemId) return; // Should have an item ID if modal was open
+         if (!draggingItemId) return;
 
          const itemToMove = retroItems.find(item => item.id === draggingItemId);
          if (!itemToMove) {
              console.error("Error cancelling rating adjustment: Original item not found.");
              setIsAdjustRatingModalOpen(false);
              setRatingAdjustmentProps(null);
-             setDraggingItemId(null); // Clear dragging state on error
+             setDraggingItemId(null);
              return;
          }
 
-         // Determine the target category
          const targetCategory = itemToMove.category === 'well' ? 'improve' : 'well';
 
          // Move the retro item without changing the rating
@@ -678,7 +729,7 @@ function RetroSpectifyPageContent() {
          setRetroItems(prev =>
              prev.map(item =>
                  item.id === draggingItemId
-                     ? { ...item, category: targetCategory, timestamp: new Date() } // Use serverTimestamp
+                     ? { ...item, category: targetCategory, timestamp: new Date() }
                      : item
              )
          );
@@ -688,11 +739,10 @@ function RetroSpectifyPageContent() {
              description: `Item moved, but sentiment rating kept at ${ratingAdjustmentProps?.currentRating || 'previous'} stars.`,
          });
 
-
-        setIsAdjustRatingModalOpen(false); // Close modal
-        setRatingAdjustmentProps(null); // Clear props
-        setDraggingItemId(null); // Clear dragging state
-    }, [draggingItemId, retroItems, toast, ratingAdjustmentProps]); // Add dependencies
+        setIsAdjustRatingModalOpen(false);
+        setRatingAdjustmentProps(null);
+        setDraggingItemId(null);
+    }, [draggingItemId, retroItems, toast, ratingAdjustmentProps]);
 
     // --- Logout Handler ---
     const handleLogout = async () => {
@@ -707,10 +757,7 @@ function RetroSpectifyPageContent() {
     };
 
 
-
   const filterItems = (category: Category) => {
-    // Filter top-level items (not replies) by category and sort by timestamp
-    // Ensure replies exist before trying to access them
     const topLevelItems = retroItems.filter(item =>
         !retroItems.some(parent => parent.replies && parent.replies.some(reply => reply.id === item.id))
     );
@@ -718,7 +765,7 @@ function RetroSpectifyPageContent() {
   };
 
    // Loading state UI
-  if (isLoading || !appUser) { // Show loading if auth is loading OR appUser isn't loaded yet
+  if (isLoading || !appUser) {
     return (
       <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
         <header className="mb-8 flex justify-between items-center">
@@ -754,11 +801,9 @@ function RetroSpectifyPageContent() {
     <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
         <header className="mb-8 flex justify-between items-center">
             <h1 className="text-3xl font-bold text-primary">RetroSpectify</h1>
-            {/* User Info and Logout Button */}
             <div className="flex items-center space-x-3">
-                <span className="text-sm font-medium hidden sm:inline">{appUser.name}</span>
+                <span className="text-sm font-medium hidden sm:inline">{appUser.name} {appUser.role === 'admin' && '(Admin)'}</span>
                 <Avatar>
-                    {/* Use Gravatar URL stored in appUser */}
                     <AvatarImage src={appUser.avatarUrl} alt={appUser.name} data-ai-hint="avatar profile picture"/>
                     <AvatarFallback>{appUser.name.charAt(0).toUpperCase()}</AvatarFallback>
                 </Avatar>
@@ -768,26 +813,24 @@ function RetroSpectifyPageContent() {
             </div>
         </header>
 
-
-      {/* Poll Section or Results Section */}
       <div className="mb-6 md:mb-8">
         {shouldShowPollForm && (
              <PollSection
-                currentUser={appUser} // Use appUser
+                currentUser={appUser}
                 onSubmitPoll={handlePollSubmit}
-                initialRating={isEditingPoll ? currentUserResponse?.rating : 0} // Default to 0 if not editing
-                initialJustification={isEditingPoll ? currentUserResponse?.justification : ''} // Default to empty if not editing
+                initialRating={isEditingPoll ? currentUserResponse?.rating : 0}
+                initialJustification={isEditingPoll ? currentUserResponse?.justification : ''}
                 isEditing={isEditingPoll}
             />
         )}
-         {shouldShowResults && currentUserResponse && ( // Only show results if user has submitted
+         {shouldShowResults && ( // Show results container if user has submitted (or is admin?) - controlled by shouldShowResults
             <PollResultsSection
                 responses={pollResponses}
-                onEdit={handleEditPoll}
-                currentUserHasVoted={!!currentUserResponse}
+                onEdit={handleEditPoll} // Only pass if user can edit (user has voted)
+                currentUserHasVoted={!!currentUserResponse} // Let component know if current user voted
+                initiallyOpen={isEditingPoll} // Open if editing
             />
          )}
-          {/* Show a message if results aren't shown because the user hasn't voted */}
          {!shouldShowPollForm && !currentUserResponse && (
               <Card className="shadow-md border border-input bg-card text-center p-6">
                   <CardDescription>Submit your sentiment in the poll above to see the team results.</CardDescription>
@@ -801,10 +844,11 @@ function RetroSpectifyPageContent() {
           title="What Went Well"
           category="well"
           items={filterItems('well')}
-          currentUser={appUser} // Use appUser
+          currentUser={appUser}
           onAddItem={handleAddItem('well')}
           onAddReply={handleAddReply}
           onMoveItem={handleMoveItem}
+          onEditItem={handleEditItem} // Pass handler
           onDeleteItem={handleDeleteItem}
           allowAddingItems={true}
           draggingItemId={draggingItemId}
@@ -816,10 +860,11 @@ function RetroSpectifyPageContent() {
           title="What Could Be Improved"
           category="improve"
           items={filterItems('improve')}
-          currentUser={appUser} // Use appUser
+          currentUser={appUser}
           onAddItem={handleAddItem('improve')}
           onAddReply={handleAddReply}
           onMoveItem={handleMoveItem}
+          onEditItem={handleEditItem} // Pass handler
           onDeleteItem={handleDeleteItem}
           allowAddingItems={true}
           draggingItemId={draggingItemId}
@@ -831,10 +876,11 @@ function RetroSpectifyPageContent() {
           title="Discussion Topics"
           category="discuss"
           items={filterItems('discuss')}
-          currentUser={appUser} // Use appUser
+          currentUser={appUser}
           onAddItem={handleAddItem('discuss')}
           onAddReply={handleAddReply}
           onMoveItem={handleMoveItem}
+          onEditItem={handleEditItem} // Pass handler
           onDeleteItem={handleDeleteItem}
           allowAddingItems={true}
           draggingItemId={draggingItemId}
@@ -846,22 +892,22 @@ function RetroSpectifyPageContent() {
           title="Action Items"
           category="action"
           items={filterItems('action')}
-          currentUser={appUser} // Use appUser
+          currentUser={appUser}
           onAddItem={handleAddItem('action')}
           onAddReply={handleAddReply}
-          onMoveItem={handleMoveItem} // Pass move handler, logic inside handles action item specifics
+          onMoveItem={handleMoveItem}
+          onEditItem={handleEditItem} // Pass handler
           onDeleteItem={handleDeleteItem}
-          allowAddingItems={true} // Allow manual adding to Action Items
+          allowAddingItems={true}
           draggingItemId={draggingItemId}
           onDragStartItem={handleDragStart}
           onDragEndItem={handleDragEnd}
           className="bg-purple-50/50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-700/50"
-          isDropTargetForActionGeneration={true} // Mark as special drop target
+          isDropTargetForActionGeneration={true}
         />
       </div>
 
-       {/* Rating Adjustment Modal */}
-       {ratingAdjustmentProps && isAdjustRatingModalOpen && ( // Ensure modal only renders when needed
+       {ratingAdjustmentProps && isAdjustRatingModalOpen && (
          <AdjustRatingModal
            isOpen={isAdjustRatingModalOpen}
            currentRating={ratingAdjustmentProps.currentRating}
@@ -875,7 +921,6 @@ function RetroSpectifyPageContent() {
   );
 }
 
-// Wrap the main content with ProtectedRoute
 export default function RetroSpectifyPage() {
     return (
         <ProtectedRoute>

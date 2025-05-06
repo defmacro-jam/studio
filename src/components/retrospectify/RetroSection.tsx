@@ -18,6 +18,7 @@ interface RetroSectionProps {
   onAddItem: (content: string) => void;
   onAddReply: (itemId: string, replyContent: string) => void;
   onMoveItem: (itemId: string, targetCategory: Category) => void; // Add move handler
+  onEditItem?: (itemId: string, newContent: string) => void; // Add edit handler
   onDeleteItem?: (itemId: string) => void;
   allowAddingItems?: boolean;
   className?: string;
@@ -35,13 +36,14 @@ export function RetroSection({
   onAddItem,
   onAddReply,
   onMoveItem,
+  onEditItem, // Receive edit handler
   onDeleteItem,
   allowAddingItems = true,
   className,
   draggingItemId,
-  onDragStartItem, // Receive drag start handler
-  onDragEndItem,   // Receive drag end handler
-  isDropTargetForActionGeneration = false, // Default to false
+  onDragStartItem,
+  onDragEndItem,
+  isDropTargetForActionGeneration = false,
 }: RetroSectionProps) {
   const [newItemContent, setNewItemContent] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
@@ -54,24 +56,21 @@ export function RetroSection({
     }
   };
 
-  // Simplified handleDragOver: Always prevent default and set visual indicator.
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault(); // Necessary to allow the drop event to fire
-    e.dataTransfer.dropEffect = "move"; // Indicate that a move is possible
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
     setIsDragOver(true);
   };
 
   const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
-     // Check if the relatedTarget (where the cursor is going) is inside the current element
      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
         setIsDragOver(false);
      }
   };
 
-  // Centralized drop logic: Validate the drop here *after* it happens.
   const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault(); // Prevent default browser behavior (e.g., navigating)
-    setIsDragOver(false); // Reset visual indicator
+    e.preventDefault();
+    setIsDragOver(false);
     const dataString = e.dataTransfer.getData('application/json');
     if (!dataString) {
         console.warn("No data transferred on drop.");
@@ -80,26 +79,31 @@ export function RetroSection({
 
     try {
         const { id: droppedItemId, originalCategory } = JSON.parse(dataString);
+        const item = items.find(i => i.id === droppedItemId); // Get item details
+        const isAdmin = currentUser.role === 'admin';
+        const isAuthor = item?.author.id === currentUser.id;
 
         if (!droppedItemId || !originalCategory) {
             console.warn("Drop failed: Missing item ID or original category.");
             return;
         }
 
-        // Prevent dropping onto the same column
+        // Allow drop if user is admin or is the author of the item
+        if (!isAdmin && !isAuthor) {
+            console.warn("Drop prevented: User is not admin or author.");
+             // Optionally show a toast
+            return;
+        }
+
         if (originalCategory === category) {
-             // console.log("Drop prevented: Same category.");
              return;
         }
 
-        // Specific rule: Only 'discuss' can trigger action generation when dropped on 'action'
         if (category === 'action' && originalCategory !== 'discuss') {
             console.warn("Cannot move non-discussion items directly to Action Items.");
-             // Optionally show a toast message here using a prop passed down from page.tsx if needed
-            return; // Invalid drop into action column
+            return;
         }
 
-        // If all checks pass, call the move item handler (defined in page.tsx)
         onMoveItem(droppedItemId, category);
 
     } catch (error) {
@@ -117,52 +121,51 @@ export function RetroSection({
        )}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        onDrop={handleDrop} // Ensure onDrop is correctly bound
+        onDrop={handleDrop}
     >
-      <CardHeader className="sticky top-0 bg-card z-10 border-b"> {/* Changed background to card */}
+      <CardHeader className="sticky top-0 bg-card z-10 border-b">
         <CardTitle className="text-lg font-semibold flex items-center">
             {title} <span className="ml-2 text-sm font-normal text-muted-foreground">({items.length})</span>
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex-grow overflow-y-auto p-4 space-y-4 min-h-[150px]"> {/* Add min-height */}
+      <CardContent className="flex-grow overflow-y-auto p-4 space-y-4 min-h-[150px]">
         {items.map((item) => (
           <RetroItemCard
             key={item.id}
             item={item}
             currentUser={currentUser}
             onAddReply={onAddReply}
+            onEditItem={onEditItem} // Pass edit handler
             onDeleteItem={onDeleteItem}
-            onDragStartItem={onDragStartItem} // Pass down drag start handler
-            onDragEndItem={onDragEndItem}     // Pass down drag end handler
-            isDragging={draggingItemId === item.id} // Pass dragging state
+            onDragStartItem={onDragStartItem}
+            onDragEndItem={onDragEndItem}
+            isDragging={draggingItemId === item.id}
           />
         ))}
-        {items.length === 0 && !isDragOver && ( // Hide "No items yet" when dragging over
+        {items.length === 0 && !isDragOver && (
             <p className="text-sm text-muted-foreground text-center py-4">No items yet.</p>
         )}
-         {isDragOver && ( // Placeholder when dragging over
+         {isDragOver && (
               <div className="h-24 border-2 border-dashed border-primary/50 rounded-md flex items-center justify-center text-primary/80">
-                 {category === 'action' ? 'Drop to generate Action Item' : 'Drop here to move'}
+                 {category === 'action' && isDropTargetForActionGeneration ? 'Drop Discussion to Generate Action Item' : 'Drop here to move'}
               </div>
          )}
       </CardContent>
       {allowAddingItems && (
-        <form onSubmit={handleAddItemSubmit} className="p-4 border-t bg-card space-y-2"> {/* Changed background to card */}
+        <form onSubmit={handleAddItemSubmit} className="p-4 border-t bg-card space-y-2">
           <Textarea
             placeholder={`Add to "${title}"...`}
             value={newItemContent}
             onChange={(e) => setNewItemContent(e.target.value)}
-            className="min-h-[60px] bg-background" // Explicitly set textarea background
+            className="min-h-[60px] bg-background"
           />
           <div className="flex justify-end">
              <Button type="submit" disabled={!newItemContent.trim()}>
                 <PlusCircle className="mr-2 h-4 w-4" /> Add Item
             </Button>
           </div>
-
         </form>
       )}
     </Card>
   );
 }
-

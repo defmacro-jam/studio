@@ -21,6 +21,7 @@ export interface RetroItem {
   category: Category; // Category is required
   isFromPoll?: boolean; // Optional flag
   pollResponseId?: string; // Optional ID
+  editing?: boolean; // Optional flag to control UI edit state
 }
 
 export interface PollResponse {
@@ -40,3 +41,4 @@ export interface Team {
     createdAt: any; // Firestore Timestamp
     // Add other team-related fields
 }
+
