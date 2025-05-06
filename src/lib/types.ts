@@ -82,3 +82,15 @@ export interface GlobalConfig {
   isDemoModeEnabled: boolean;
 }
 
+export interface GenerateRetroReportInput {
+    teamId: string;
+    teamName: string;
+    pollResponses: PollResponse[];
+    retroItems: RetroItem[];
+    currentScrumMaster?: User | null;
+}
+
+export interface GenerateRetroReportOutput {
+    reportSummaryHtml: string; // HTML content for the email body
+    nextScrumMaster?: User | null; // The suggested next scrum master
+}
