@@ -3,14 +3,23 @@ import type { Timestamp } from 'firebase/firestore'; // Import Timestamp
 
 export type Category = 'well' | 'improve' | 'discuss' | 'action';
 
-// Team Roles
+// Team Roles - Specific to a team context
 export const TEAM_ROLES = {
   OWNER: 'owner',
-  MANAGER: 'manager',
-  MEMBER: 'member',
+  MANAGER: 'manager', // Role with team management permissions (invite/remove members, assign scrum master)
+  MEMBER: 'member',   // Standard member
 } as const;
 
 export type TeamRole = typeof TEAM_ROLES[keyof typeof TEAM_ROLES];
+
+// App-wide Roles - Stored on the user document
+export const APP_ROLES = {
+    ADMIN: 'admin',     // Can manage users, potentially system-wide settings
+    MEMBER: 'member',   // Standard user
+} as const;
+
+export type AppRole = typeof APP_ROLES[keyof typeof APP_ROLES];
+
 
 // Updated User type to better align with Firebase Auth and app needs
 export interface User {
@@ -18,9 +27,8 @@ export interface User {
   name: string; // Corresponds to Firebase displayName or a fallback
   email: string; // Email is required for Gravatar
   avatarUrl: string; // Gravatar URL or a fallback URL
-  // Add other relevant fields if needed, e.g., from Firestore user document
-  // teamIds?: string[];
-  role?: 'admin' | 'member'; // App-level role (optional)
+  role: AppRole; // App-wide role ('admin' or 'member')
+  // teamIds?: string[]; // Consider adding if needed for direct lookups, but often fetched via teams collection
 }
 
 export interface RetroItem {
@@ -47,18 +55,24 @@ export interface PollResponse {
 export interface Team {
     id: string; // ID is added after fetching
     name: string;
-    owner: string; // UID of the owner
+    owner: string; // UID of the owner (implicitly has owner role)
     members: string[]; // Array of member UIDs
-    memberRoles: { [uid: string]: TeamRole }; // Map UID to team-specific role
+    memberRoles: { [uid: string]: TeamRole }; // Map UID to team-specific role (Owner, Manager, Member)
     scrumMasterUid?: string | null; // UID of the current scrum master (optional)
     createdAt: Timestamp; // Firestore Timestamp
     createdBy: string; // UID of the creator
 }
 
 
-// Type for displaying members on the team page, including their role
+// Type for displaying members on the team page, including their team-specific role
 export interface TeamMemberDisplay extends User {
-    teamRole: TeamRole;
+    teamRole: TeamRole; // The user's role *within this specific team*
+}
+
+// Type for displaying users on the admin page, including their app-wide role
+export interface AdminUserDisplay extends User {
+    // Inherits id, name, email, avatarUrl, role (which is AppRole)
+    // No teamRole needed here as it's app-wide management
 }
 
 

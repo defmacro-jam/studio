@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, type FormEvent } from 'react';
@@ -13,6 +14,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useToast } from '@/hooks/use-toast';
 import { UserPlus } from 'lucide-react';
 import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
+import { APP_ROLES } from '@/lib/types'; // Import APP_ROLES
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
@@ -53,7 +55,7 @@ export default function SignupPage() {
 
     const userDisplayName = displayName.trim() || email.split('@')[0]; // Default display name from email prefix if none provided
     const userEmail = email.trim().toLowerCase(); // Normalize email
-    const gravatarUrl = getGravatarUrl(userEmail, 100); // Generate Gravatar URL
+    const gravatarUrl = getGravatarUrl(userEmail, 100)!; // Generate Gravatar URL
 
 
     try {
@@ -85,7 +87,7 @@ export default function SignupPage() {
         createdAt: serverTimestamp(),
         teams: [], // Initialize empty teams array (user might join/create later)
         avatarUrl: gravatarUrl, // Store Gravatar URL in Firestore as well
-        role: 'member', // Set default role
+        role: APP_ROLES.MEMBER, // Set default app-wide role to 'member'
       });
 
 

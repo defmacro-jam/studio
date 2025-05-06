@@ -20,28 +20,29 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardHeader, CardContent, CardFooter, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button'; // Import Button
-import { Users, LogOut } from 'lucide-react'; // Import Users and LogOut icons
+import { Users, LogOut, ShieldCheck } from 'lucide-react'; // Import Users, LogOut and ShieldCheck icons
 import ProtectedRoute from '@/components/auth/ProtectedRoute'; // Import ProtectedRoute
 import { useAuth } from '@/context/AuthContext'; // Import useAuth
 import { auth, db } from '@/lib/firebase'; // Import auth and db
 import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
+import { APP_ROLES } from '@/lib/types'; // Import APP_ROLES
 
 
 // Mock initial data - replace with API/DB calls later
 // Helper function to generate mock users with Gravatar fallbacks
-const generateMockUser = (id: string, name: string, emailSuffix: string, role: 'admin' | 'member' = 'member'): User => {
+const generateMockUser = (id: string, name: string, emailSuffix: string, appRole: User['role'] = APP_ROLES.MEMBER): User => {
     const email = `${name.toLowerCase().replace(' ', '.')}${emailSuffix}@example.com`;
     return {
         id: id,
         name: name,
         email: email,
         avatarUrl: getGravatarUrl(email, 100)!, // Use Gravatar, assuming it won't be null
-        role: role,
+        role: appRole, // Use app-wide role
     };
 };
 
 // Make Alex Doe an admin for testing purposes
-const mockUserAlex = generateMockUser('user-123', 'Alex Doe', '', 'admin');
+const mockUserAlex = generateMockUser('user-123', 'Alex Doe', '', APP_ROLES.ADMIN); // Use APP_ROLES constant
 const mockUserBob = generateMockUser('user-456', 'Bob Smith', '1');
 const mockUserCharlie = generateMockUser('user-789', 'Charlie Brown', '2');
 const mockUserDana = generateMockUser('user-555', 'Dana Scully', '3');
@@ -108,7 +109,7 @@ function RetroSpectifyPageContent() {
                     email: currentUser.email || userData.email || 'unknown@example.com', // Ensure email exists
                     // Use avatarUrl from Firestore first, then Auth, then generate Gravatar as fallback
                     avatarUrl: userData.avatarUrl || currentUser.photoURL || getGravatarUrl(currentUser.email, 100)!,
-                    role: userData.role || 'member', // Include role if available
+                    role: userData.role || APP_ROLES.MEMBER, // Include app-wide role, default to MEMBER
                  };
            } else {
                // Handle case where user exists in Auth but not Firestore (create basic user object)
@@ -119,7 +120,7 @@ function RetroSpectifyPageContent() {
                   name: currentUser.displayName || fallbackEmail.split('@')[0] || 'User',
                   email: fallbackEmail,
                   avatarUrl: currentUser.photoURL || getGravatarUrl(fallbackEmail, 100)!, // Use photoURL or generate Gravatar
-                  role: 'member', // Default role
+                  role: APP_ROLES.MEMBER, // Default app-wide role
                };
            }
            setAppUser(resolvedUser);
@@ -133,7 +134,7 @@ function RetroSpectifyPageContent() {
           let initialItems = mockInitialItems;
           let initialPolls = mockInitialPollResponses;
 
-          if (resolvedUser.role === 'admin' && !initialItems.some(item => item.author.id === resolvedUser.id)) {
+          if (resolvedUser.role === APP_ROLES.ADMIN && !initialItems.some(item => item.author.id === resolvedUser.id)) {
                 // Add some items for the admin if they don't exist
                 initialItems = [
                   ...initialItems,
@@ -141,7 +142,7 @@ function RetroSpectifyPageContent() {
                   { id: 'admin-d1', author: resolvedUser, content: 'Admin: Discuss project alpha status.', timestamp: new Date(), category: 'discuss' },
                 ];
           }
-          if (resolvedUser.role === 'admin' && !initialPolls.some(poll => poll.author.id === resolvedUser.id)) {
+          if (resolvedUser.role === APP_ROLES.ADMIN && !initialPolls.some(poll => poll.author.id === resolvedUser.id)) {
              // Add a poll response for the admin if they don't exist
              initialPolls = [
                 ...initialPolls,
@@ -402,7 +403,7 @@ function RetroSpectifyPageContent() {
         prev.map(item => {
             if (item.id === itemId) {
                 // Permission check: Author or Admin
-                const canEdit = item.author.id === appUser.id || appUser.role === 'admin';
+                const canEdit = item.author.id === appUser.id || appUser.role === APP_ROLES.ADMIN;
                 if (!canEdit) {
                     toast({ title: "Cannot Edit", description: "You don't have permission to edit this item.", variant: "destructive" });
                     return { ...item, editing: false }; // Revert editing state if UI was toggled prematurely
@@ -428,7 +429,7 @@ function RetroSpectifyPageContent() {
       }
 
       // Permission check: Only author or admin can generate action from discussion
-      const canGenerate = discussionItem.author.id === appUser.id || appUser.role === 'admin';
+      const canGenerate = discussionItem.author.id === appUser.id || appUser.role === APP_ROLES.ADMIN;
        if (!canGenerate) {
             toast({ title: "Permission Denied", description: "Only the author or an admin can generate an action item from this discussion.", variant: "destructive" });
             return;
@@ -509,7 +510,7 @@ function RetroSpectifyPageContent() {
      if (!itemToDelete) return;
 
      // Permission check: Author or Admin
-     const canDelete = itemToDelete.author.id === appUser.id || appUser.role === 'admin';
+     const canDelete = itemToDelete.author.id === appUser.id || appUser.role === APP_ROLES.ADMIN;
 
      if (!canDelete) {
           toast({
@@ -522,7 +523,7 @@ function RetroSpectifyPageContent() {
 
      // Prevent deleting items generated from the current user's *uneditable* poll response
      // Allow deletion if the poll is currently being edited OR if user is admin
-     if (itemToDelete.isFromPoll && itemToDelete.author.id === appUser.id && !isEditingPoll && appUser.role !== 'admin') {
+     if (itemToDelete.isFromPoll && itemToDelete.author.id === appUser.id && !isEditingPoll && appUser.role !== APP_ROLES.ADMIN) {
          toast({
             title: "Cannot Delete Poll Item",
             description: "Edit your poll response to change items derived from it, or delete the entire response.",
@@ -544,7 +545,7 @@ function RetroSpectifyPageContent() {
    const handleDragStart = useCallback((itemId: string) => {
      const item = retroItems.find(i => i.id === itemId);
       // Allow drag if user is admin OR is the author
-      if (item && (item.author.id === appUser?.id || appUser?.role === 'admin')) {
+      if (item && (item.author.id === appUser?.id || appUser?.role === APP_ROLES.ADMIN)) {
          setDraggingItemId(itemId);
      } else {
           // Prevent dragging if not allowed
@@ -574,7 +575,7 @@ function RetroSpectifyPageContent() {
         }
 
          // Permission check: Author or Admin
-         const canMove = itemToMove.author.id === appUser.id || appUser.role === 'admin';
+         const canMove = itemToMove.author.id === appUser.id || appUser.role === APP_ROLES.ADMIN;
          if (!canMove) {
              console.log("Prevented move: User does not have permission.");
              toast({
@@ -754,6 +755,7 @@ function RetroSpectifyPageContent() {
              <h1 className="text-3xl font-bold text-primary">RetroSpectify</h1>
              <div className="flex items-center space-x-3">
                   <Skeleton className="h-10 w-24 rounded-md" /> {/* Skeleton for Teams button */}
+                  {/* Add Skeleton for Admin Dashboard if applicable */}
                   <Skeleton className="h-10 w-10 rounded-full" /> {/* Skeleton for user avatar */}
                   <Skeleton className="h-10 w-24 rounded-md" /> {/* Skeleton for logout button */}
              </div>
@@ -794,10 +796,18 @@ function RetroSpectifyPageContent() {
                          <Users className="mr-2 h-4 w-4" /> Teams
                      </Button>
                  </Link>
+                 {/* Link to Admin Dashboard (only for admins) */}
+                 {appUser.role === APP_ROLES.ADMIN && (
+                     <Link href="/admin" passHref>
+                         <Button variant="outline" size="sm">
+                             <ShieldCheck className="mr-2 h-4 w-4" /> Admin
+                         </Button>
+                     </Link>
+                 )}
                   {/* Link to Me page */}
                  <Link href="/me" passHref>
                     <div className="flex items-center space-x-2 cursor-pointer hover:bg-secondary p-1 rounded-md transition-colors">
-                        <span className="text-sm font-medium hidden sm:inline">{appUser.name} {appUser.role === 'admin' && '(Admin)'}</span>
+                        <span className="text-sm font-medium hidden sm:inline">{appUser.name}</span>
                         <Avatar>
                             <AvatarImage src={appUser.avatarUrl} alt={appUser.name} data-ai-hint="avatar profile picture"/>
                             <AvatarFallback>{appUser.name.charAt(0).toUpperCase()}</AvatarFallback>
