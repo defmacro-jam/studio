@@ -41,43 +41,50 @@ function CreateTeamPageContent() {
 
     try {
         const batch = writeBatch(db);
+        const trimmedTeamName = teamName.trim();
 
-        // 1. Create the team document within the batch
-        const teamDocRef = doc(collection(db, 'teams')); // Generate ref first
+        // 1. Generate the team document reference first to get its ID
+        const teamDocRef = doc(collection(db, 'teams'));
+
+        // 2. Set the team document data within the batch
         batch.set(teamDocRef, {
-            name: teamName.trim(),
+            name: trimmedTeamName,
             createdAt: serverTimestamp(),
-            createdBy: currentUser.uid,
-            members: [currentUser.uid], // Add creator as the first member
+            createdBy: currentUser.uid, // UID of the creator
             owner: currentUser.uid, // Set creator as the owner
-            memberRoles: { // Initialize roles map
+            members: [currentUser.uid], // Add creator's UID as the first member
+            memberRoles: { // Initialize roles map with the creator as Owner
                 [currentUser.uid]: TEAM_ROLES.OWNER,
             },
             scrumMasterUid: null, // Initialize scrum master as null
         });
 
-        // 2. Update the user's document to include the new team ID within the batch
+        // 3. Update the creator's user document to include the new team ID within the batch
         const userDocRef = doc(db, 'users', currentUser.uid);
         batch.update(userDocRef, {
-            teams: arrayUnion(teamDocRef.id),
+            teams: arrayUnion(teamDocRef.id), // Add the new team's ID to the user's list of teams
         });
 
-        // 3. Commit the batch
+        // 4. Commit the batch transaction
         await batch.commit();
 
 
       toast({
         title: 'Team Created!',
-        description: `Team "${teamName}" has been successfully created.`,
+        description: `Team "${trimmedTeamName}" has been successfully created.`,
       });
-      router.push(`/teams/${teamDocRef.id}`); // Redirect to the new team page
+      router.push(`/teams/${teamDocRef.id}`); // Redirect to the new team page using the generated ID
 
     } catch (err: any) {
       console.error('Team creation error:', err);
+       let description = 'An unexpected error occurred.';
+       if (err.code === 'permission-denied') {
+         description = 'Permission denied. Check Firestore security rules.';
+       }
       setError('Failed to create team. Please try again.');
       toast({
         title: 'Team Creation Failed',
-        description: 'An unexpected error occurred.',
+        description: description,
         variant: 'destructive',
       });
     } finally {
