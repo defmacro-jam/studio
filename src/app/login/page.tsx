@@ -1,16 +1,19 @@
+
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation'; // Added useSearchParams
 import Link from 'next/link';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { LogIn } from 'lucide-react';
+import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore'; // Added Firestore functions
+import { TEAM_ROLES } from '@/lib/types'; // Added TEAM_ROLES
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -18,6 +21,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const searchParams = useSearchParams(); // Get search params
   const { toast } = useToast();
 
   const handleLogin = async (e: FormEvent) => {
@@ -25,8 +29,43 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
 
+    const teamIdToJoin = searchParams.get('teamId'); // Get teamId from query, if present
+
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // If joining a team via invite link after logging in
+      if (teamIdToJoin && user) {
+        const userDocRef = doc(db, 'users', user.uid);
+        const userDocSnap = await getDoc(userDocRef);
+
+        if (userDocSnap.exists()) {
+          const userData = userDocSnap.data();
+          const userTeamIds = userData.teamIds || [];
+
+          // Check if user is already part of the team
+          if (!userTeamIds.includes(teamIdToJoin)) {
+            const teamDocRef = doc(db, 'teams', teamIdToJoin);
+            // Add user to team members and roles, remove from pending
+            await updateDoc(teamDocRef, {
+              members: arrayUnion(user.uid),
+              [`memberRoles.${user.uid}`]: TEAM_ROLES.MEMBER, // Default role on join
+              pendingMemberEmails: arrayRemove(email.toLowerCase()) // Remove by email from pending list
+            });
+            // Add teamId to user's document
+            await updateDoc(userDocRef, {
+              teamIds: arrayUnion(teamIdToJoin)
+            });
+            toast({
+              title: 'Joined Team!',
+              description: "You've been successfully added to the team.",
+            });
+          }
+        }
+      }
+
+
       toast({
         title: 'Login Successful',
         description: 'Welcome back!',

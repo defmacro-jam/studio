@@ -4,7 +4,7 @@
 import { useState, type FormEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link'; // Import Link
-import { collection, addDoc, serverTimestamp, doc, updateDoc, arrayUnion, writeBatch, query, where, getDocs, documentId } from 'firebase/firestore'; // Import query, where, getDocs, documentId
+import { collection, addDoc, serverTimestamp, doc, updateDoc, arrayUnion, writeBatch, query, where, getDocs, documentId, getDoc as getFirestoreDoc } from 'firebase/firestore'; // Import query, where, getDocs, documentId, renamed getDoc
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -32,7 +32,7 @@ function CreateTeamPageContent() {
         const fetchAppUser = async () => {
             if (currentUser) {
                 const userDocRef = doc(db, 'users', currentUser.uid);
-                const userDocSnap = await getDoc(userDocRef);
+                const userDocSnap = await getFirestoreDoc(userDocRef); // Use renamed getFirestoreDoc
                 if (userDocSnap.exists()) {
                     setAppUser({ id: userDocSnap.id, ...userDocSnap.data() } as AppUser);
                 } else {
@@ -53,7 +53,7 @@ function CreateTeamPageContent() {
             setLoading(true); // Indicate loading while fetching existing names
             try {
                  const userDocRef = doc(db, 'users', currentUser.uid);
-                 const userDocSnap = await getDoc(userDocRef);
+                 const userDocSnap = await getFirestoreDoc(userDocRef); // Use renamed getFirestoreDoc
                  if (userDocSnap.exists()) {
                      const userData = userDocSnap.data();
                      const teamIds = userData.teamIds || userData.teams || []; // Use teamIds
@@ -129,6 +129,7 @@ function CreateTeamPageContent() {
             memberRoles: { // Initialize roles map with the creator as Owner
                 [currentUser.uid]: TEAM_ROLES.OWNER,
             },
+            pendingMemberEmails: [], // Initialize as empty array
             scrumMasterUid: null, // Initialize scrum master as null
         });
 

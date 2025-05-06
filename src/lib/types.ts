@@ -59,6 +59,7 @@ export interface Team {
     members: string[]; // Array of member UIDs
     memberRoles: { [uid: string]: TeamRole }; // Map UID to team-specific role (Owner, Manager, Member)
     scrumMasterUid?: string | null; // UID of the current scrum master (optional)
+    pendingMemberEmails?: string[]; // Emails of users invited but not yet joined
     createdAt: Timestamp; // Firestore Timestamp
     createdBy: string; // UID of the creator
 }
@@ -80,3 +81,4 @@ export interface GlobalConfig {
   id: 'global'; // Document ID, always 'global'
   isDemoModeEnabled: boolean;
 }
+

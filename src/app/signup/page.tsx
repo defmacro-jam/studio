@@ -1,10 +1,11 @@
+
 'use client';
 
-import { useState, type FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, type FormEvent, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation'; // Added useSearchParams
 import Link from 'next/link';
 import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore'; // Added updateDoc, arrayUnion, arrayRemove, getDoc
 import { auth, db } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,7 +14,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { useToast } from '@/hooks/use-toast';
 import { UserPlus } from 'lucide-react';
 import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
-import { APP_ROLES } from '@/lib/types'; // Import APP_ROLES
+import { APP_ROLES, TEAM_ROLES } from '@/lib/types'; // Import APP_ROLES and TEAM_ROLES
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
@@ -23,7 +24,17 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const searchParams = useSearchParams(); // Get search params
   const { toast } = useToast();
+
+  // Pre-fill email if passed in query params (from team invite)
+  useEffect(() => {
+    const inviteEmail = searchParams.get('email');
+    if (inviteEmail) {
+      setEmail(inviteEmail);
+    }
+  }, [searchParams]);
+
 
   const handleSignup = async (e: FormEvent) => {
     e.preventDefault();
@@ -55,6 +66,7 @@ export default function SignupPage() {
     const userDisplayName = displayName.trim() || email.split('@')[0]; // Default display name from email prefix if none provided
     const userEmail = email.trim().toLowerCase(); // Normalize email
     const gravatarUrl = getGravatarUrl(userEmail, 100)!; // Generate Gravatar URL
+    const teamIdToJoin = searchParams.get('teamId'); // Get teamId from query
 
 
     try {
@@ -78,22 +90,36 @@ export default function SignupPage() {
 
 
       // Create user document in Firestore
-      // Store basic info needed for team management etc.
-      await setDoc(doc(db, 'users', user.uid), {
+      const userDocRef = doc(db, 'users', user.uid);
+      await setDoc(userDocRef, {
         uid: user.uid,
         email: userEmail, // Store normalized email
         displayName: userDisplayName,
         createdAt: serverTimestamp(),
-        teams: [], // Initialize empty teams array (user might join/create later)
+        teamIds: teamIdToJoin ? [teamIdToJoin] : [], // Add teamId if joining via invite
         avatarUrl: gravatarUrl, // Store Gravatar URL in Firestore as well
         role: APP_ROLES.MEMBER, // Set default app-wide role to 'member'
       });
 
-
-      toast({
-        title: 'Signup Successful',
-        description: `Welcome, ${userDisplayName}! Please verify your email.`,
-      });
+      // If joining a team via invite link
+      if (teamIdToJoin) {
+        const teamDocRef = doc(db, 'teams', teamIdToJoin);
+        // Add user to team members and roles, remove from pending
+        await updateDoc(teamDocRef, {
+            members: arrayUnion(user.uid),
+            [`memberRoles.${user.uid}`]: TEAM_ROLES.MEMBER,
+            pendingMemberEmails: arrayRemove(userEmail)
+        });
+        toast({
+          title: 'Joined Team!',
+          description: `You've been added to the team. Welcome, ${userDisplayName}!`,
+        });
+      } else {
+          toast({
+            title: 'Signup Successful',
+            description: `Welcome, ${userDisplayName}! Please verify your email.`,
+          });
+      }
       router.push('/'); // Redirect to home or a 'please verify' page
 
     } catch (err: any) {
@@ -147,7 +173,7 @@ export default function SignupPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                disabled={loading}
+                disabled={loading || !!searchParams.get('email')} // Disable if email pre-filled
               />
             </div>
             <div className="space-y-2">

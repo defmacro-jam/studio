@@ -80,7 +80,7 @@ function TeamPageContent() {
                      router.push('/'); // Consider redirecting to a more appropriate page like /teams or /dashboard
                      return;
                 }
-                const teamResult = { id: teamDocSnap.id, ...data, members: membersList, memberRoles };
+                const teamResult = { id: teamDocSnap.id, ...data, members: membersList, memberRoles, pendingMemberEmails: data.pendingMemberEmails || [] };
                 setTeamData(teamResult);
                 setEditedTeamName(teamResult.name); // Initialize edited name
                 setLoadingTeam(false);
@@ -292,11 +292,17 @@ function TeamPageContent() {
 
         if (querySnapshot.empty) {
             // --- User Does Not Exist ---
+            // Add email to pendingMemberEmails list in team document
+            const teamDocRef = doc(db, 'teams', teamData.id);
+            await updateDoc(teamDocRef, {
+                pendingMemberEmails: arrayUnion(emailToInvite)
+            });
+
             // Attempt to send a password reset email, which works as an invite for non-existent users
             try {
                 await sendPasswordResetEmail(auth, emailToInvite, {
-                   url: `${window.location.origin}/login?teamId=${teamData.id}&invite=true`, // Include teamId for post-signup/login action
-                   handleCodeInApp: false, // Let Firebase handle the password reset flow
+                   url: `${window.location.origin}/signup?teamId=${teamData.id}&email=${encodeURIComponent(emailToInvite)}`, // Pass teamId and email
+                   handleCodeInApp: false, 
                 });
                  toast({
                      title: 'Invitation Sent',
@@ -304,11 +310,11 @@ function TeamPageContent() {
                      variant: 'default',
                      duration: 7000
                  });
-                 setInviteEmail(''); // Clear input
+                 setInviteEmail(''); 
+                 await fetchTeamData(); // Re-fetch team data to update pending list display
 
             } catch (emailError: any) {
                  console.error('Error sending invitation/password reset email:', emailError);
-                 // Handle specific auth errors if needed (e.g., invalid email format)
                  let description = 'Could not send invitation email. Please check the address and try again.';
                  if (emailError.code === 'auth/invalid-email') {
                      description = 'Invalid email address format.';
@@ -340,9 +346,11 @@ function TeamPageContent() {
         const userDocRef = doc(db, 'users', userId);
 
         // Add user's UID to team's members array and set default role (MEMBER) in memberRoles map
+        // Also remove email from pendingMemberEmails if it exists there
         batch.update(teamDocRef, {
              members: arrayUnion(userId),
-             [`memberRoles.${userId}`]: TEAM_ROLES.MEMBER // Set default role in the map
+             [`memberRoles.${userId}`]: TEAM_ROLES.MEMBER, 
+             pendingMemberEmails: arrayRemove(emailToInvite) // Remove from pending
         });
         // Add team's ID to user's teams array
         batch.update(userDocRef, { teams: arrayUnion(teamData.id) });
@@ -764,7 +772,7 @@ function TeamPageContent() {
                                                   <AlertDialogAction
                                                       onClick={() => handleRemoveMember(member.uid)}
                                                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                                      disabled={isRemoving === member.uid} // Ensure button is disabled during operation
+                                                      disabled={isRemoving === member.uid} // Ensure button is also disabled during operation
                                                    >
                                                       {isRemoving === member.uid ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Removing...</> : 'Yes, Remove Member'}
                                                   </AlertDialogAction>
@@ -811,6 +819,25 @@ function TeamPageContent() {
              </form>
            </Card>
        )}
+
+        {/* Display Pending Invitations */}
+        {teamData.pendingMemberEmails && teamData.pendingMemberEmails.length > 0 && (
+            <Card className="mt-8">
+                <CardHeader>
+                    <CardTitle className="text-xl">Pending Invitations</CardTitle>
+                    <CardDescription>These users have been invited but haven't signed up or joined yet.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <ul className="space-y-2">
+                        {teamData.pendingMemberEmails.map(email => (
+                            <li key={email} className="text-sm text-muted-foreground p-2 border-b border-dashed">
+                                {email}
+                            </li>
+                        ))}
+                    </ul>
+                </CardContent>
+            </Card>
+        )}
 
         {/* General Error Display */}
        {error && !loadingTeam && (
