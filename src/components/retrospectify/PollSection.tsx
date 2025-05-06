@@ -10,6 +10,7 @@ import { StarRating } from './StarRating';
 import type { User } from '@/lib/types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Send, Edit } from 'lucide-react'; // Import Edit icon
+import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
 
 interface PollSectionProps {
   currentUser: User;
@@ -44,6 +45,9 @@ export function PollSection({
     }
   };
 
+  // Ensure avatar URL is valid, fallback to generating Gravatar if missing
+  const avatarUrl = currentUser.avatarUrl || getGravatarUrl(currentUser.email, 100)!;
+
   return (
     <Card className="shadow-md border border-primary/20 bg-primary/5">
       <CardHeader>
@@ -58,7 +62,7 @@ export function PollSection({
           <CardContent className="space-y-4">
           <div className="flex items-center space-x-3 mb-4">
               <Avatar className="h-10 w-10 border">
-                  <AvatarImage src={currentUser.avatarUrl} alt={currentUser.name} data-ai-hint="avatar profile picture"/>
+                  <AvatarImage src={avatarUrl} alt={currentUser.name} data-ai-hint="avatar profile picture"/>
                   <AvatarFallback>{currentUser.name.charAt(0).toUpperCase()}</AvatarFallback>
               </Avatar>
               <p className="font-medium">{currentUser.name}</p>

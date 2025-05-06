@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { UserPlus } from 'lucide-react';
+import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
@@ -51,15 +52,18 @@ export default function SignupPage() {
      }
 
     const userDisplayName = displayName.trim() || email.split('@')[0]; // Default display name from email prefix if none provided
+    const userEmail = email.trim().toLowerCase(); // Normalize email
+    const gravatarUrl = getGravatarUrl(userEmail, 100); // Generate Gravatar URL
 
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const userCredential = await createUserWithEmailAndPassword(auth, userEmail, password);
       const user = userCredential.user;
 
-      // Update profile with display name in Firebase Auth
+      // Update profile with display name and Gravatar URL in Firebase Auth
       await updateProfile(user, {
         displayName: userDisplayName,
+        photoURL: gravatarUrl, // Set photoURL to Gravatar
       });
 
        // Send email verification
@@ -76,11 +80,12 @@ export default function SignupPage() {
       // Store basic info needed for team management etc.
       await setDoc(doc(db, 'users', user.uid), {
         uid: user.uid,
-        email: user.email?.toLowerCase(), // Store email consistently in lowercase
+        email: userEmail, // Store normalized email
         displayName: userDisplayName,
         createdAt: serverTimestamp(),
         teams: [], // Initialize empty teams array (user might join/create later)
-        avatarUrl: null, // Placeholder for avatar - can be updated later via profile settings
+        avatarUrl: gravatarUrl, // Store Gravatar URL in Firestore as well
+        role: 'member', // Set default role
       });
 
 

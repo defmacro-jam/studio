@@ -6,15 +6,16 @@ import { useMemo } from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartConfig } from "@/components/ui/chart";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis, LabelList } from "recharts";
-import type { PollResponse } from "@/lib/types"; // Import User type removed as it's implicitly handled via PollResponse
+import type { PollResponse } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { Edit } from "lucide-react"; // Removed ChevronDown as it's handled by AccordionTrigger
+import { Edit } from "lucide-react";
 import {
   Accordion,
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from "@/components/ui/accordion"; // Import Accordion components
+} from "@/components/ui/accordion";
+import { getGravatarUrl } from "@/lib/utils"; // Import Gravatar utility
 
 interface PollResultsSectionProps {
   responses: PollResponse[];
@@ -39,7 +40,7 @@ export function PollResultsSection({ responses, onEdit, currentUserHasVoted }: P
     const totalResponses = responses.length;
 
     const ratingData = useMemo(() => {
-        const dataMap: { [key: number]: { count: number; voters: { name: string, avatarUrl: string }[] } } = {
+        const dataMap: { [key: number]: { count: number; voters: { name: string, email: string, avatarUrl: string }[] } } = {
             1: { count: 0, voters: [] },
             2: { count: 0, voters: [] },
             3: { count: 0, voters: [] },
@@ -51,7 +52,10 @@ export function PollResultsSection({ responses, onEdit, currentUserHasVoted }: P
             if (response.rating >= 1 && response.rating <= 5) {
                 const ratingKey = response.rating as keyof typeof dataMap;
                 dataMap[ratingKey].count++;
-                dataMap[ratingKey].voters.push({ name: response.author.name, avatarUrl: response.author.avatarUrl });
+                // Ensure author has email and avatarUrl, provide fallbacks if needed
+                const email = response.author.email || `${response.author.id}@example.com`;
+                const avatarUrl = response.author.avatarUrl || getGravatarUrl(email, 30)!;
+                dataMap[ratingKey].voters.push({ name: response.author.name, email: email, avatarUrl: avatarUrl });
             }
         });
         return dataMap;
@@ -77,33 +81,29 @@ export function PollResultsSection({ responses, onEdit, currentUserHasVoted }: P
     }, [responses, totalResponses]);
 
     return (
-         // Wrap the Card with Accordion - Removed defaultValue to make it closed by default
+         // Wrap the Card with Accordion, closed by default
         <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="poll-results" className="border-b-0"> {/* Remove bottom border from item */}
                  <Card className="shadow-lg border-border/80 rounded-lg bg-card">
                      {/* Use CardHeader for padding and structure, and flexbox for layout */}
-                     <CardHeader className="pb-4 pt-4 px-6 flex flex-row justify-between items-center w-full">
-                         {/* Wrapper div for the trigger content */}
-                         <div className="flex-grow">
-                             <AccordionTrigger className="p-0 hover:no-underline flex w-full"> {/* Removed flex-grow from trigger */}
-                                 <div className="flex items-center space-x-4 text-left"> {/* Ensure text aligns left */}
-                                     <div>
-                                        <CardTitle className="text-xl font-bold text-primary">Weekly Sentiment</CardTitle>
-                                        <CardDescription className="text-sm">
-                                            {totalResponses > 0
-                                                ? `Avg: ${averageRating.toFixed(1)} ★ (${totalResponses} vote${totalResponses !== 1 ? 's' : ''})`
-                                                : `No responses yet.`
-                                            }
-                                        </CardDescription>
-                                     </div>
-                                     {/* Chevron is automatically added by AccordionTrigger */}
+                     <CardHeader className="pb-4 pt-4 px-6 flex flex-row items-center w-full cursor-pointer"> {/* Make header clickable */}
+                          <AccordionTrigger className="flex-grow p-0 hover:no-underline justify-start"> {/* Trigger takes available space */}
+                              <div className="flex items-center space-x-4 text-left"> {/* Content */}
+                                 <div>
+                                    <CardTitle className="text-xl font-bold text-primary">Weekly Sentiment</CardTitle>
+                                    <CardDescription className="text-sm">
+                                        {totalResponses > 0
+                                            ? `Avg: ${averageRating.toFixed(1)} ★ (${totalResponses} vote${totalResponses !== 1 ? 's' : ''})`
+                                            : `No responses yet.`
+                                        }
+                                    </CardDescription>
                                  </div>
-                             </AccordionTrigger>
-                         </div>
-                         {/* Edit Button is a sibling to the trigger's wrapper */}
-                         {/* Conditionally render Edit button only if the user has voted */}
+                                 {/* Chevron is automatically added by AccordionTrigger */}
+                              </div>
+                          </AccordionTrigger>
+                         {/* Edit Button is outside the trigger, aligned to the right */}
                          {currentUserHasVoted && onEdit && (
-                            <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(); }} className="ml-4 flex-shrink-0"> {/* Added ml-4 for spacing */}
+                            <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(); }} className="ml-4 flex-shrink-0"> {/* Stop propagation */}
                                 <Edit className="mr-2 h-4 w-4" />
                                 Edit Vote
                             </Button>
@@ -116,17 +116,17 @@ export function PollResultsSection({ responses, onEdit, currentUserHasVoted }: P
                                 <ChartContainer config={chartConfig} className="h-[180px] w-full"> {/* Maintain height */}
                                      <BarChart
                                         data={chartData}
-                                        layout="horizontal" // Changed layout to horizontal (default)
+                                        layout="horizontal" // Bars grow vertically
                                         margin={{
                                             top: 5,
-                                            right: 10, // Reduced right margin
-                                            left: 5, // Adjusted left margin
-                                            bottom: 5, // Adjusted bottom margin
+                                            right: 10,
+                                            left: 5,
+                                            bottom: 5,
                                         }}
-                                        barCategoryGap="20%" // Adjusted gap
+                                        barCategoryGap="20%" // Adjust gap between bars
                                      >
                                          <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
-                                         {/* XAxis is now the categorical rating axis */}
+                                         {/* XAxis is the categorical rating axis (left to right) */}
                                           <XAxis
                                             dataKey="rating"
                                             type="category"
@@ -136,7 +136,7 @@ export function PollResultsSection({ responses, onEdit, currentUserHasVoted }: P
                                             stroke="hsl(var(--muted-foreground))"
                                             tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
                                          />
-                                         {/* YAxis is now the numerical count axis */}
+                                         {/* YAxis is the numerical count axis (bottom to top) */}
                                          <YAxis
                                             type="number"
                                             dataKey="count"
@@ -146,22 +146,22 @@ export function PollResultsSection({ responses, onEdit, currentUserHasVoted }: P
                                             allowDecimals={false}
                                             stroke="hsl(var(--muted-foreground))"
                                             tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
-                                            domain={[0, 'dataMax + 1']} // Ensure space for labels
+                                            domain={[0, 'dataMax + 1']} // Ensure space for labels at top
                                          />
                                          <ChartTooltip
                                             cursor={{ fill: 'hsl(var(--accent) / 0.1)' }}
                                             content={<ChartTooltipContent indicator="dot" labelClassName="font-medium" showVoters={true} />} // Enable voter display
                                          />
-                                        {/* Bar orientation adjusted (radius, barSize) */}
-                                        <Bar dataKey="count" radius={[4, 4, 0, 0]} barSize={30}> {/* Adjusted radius and barSize */}
-                                            {/* LabelList position changed to top */}
+                                        {/* Bar configuration: radius sets rounded corners */}
+                                        <Bar dataKey="count" radius={[4, 4, 0, 0]} barSize={30}> {/* Radius for top corners */}
+                                            {/* LabelList shows the count above each bar */}
                                             <LabelList
                                                 dataKey="count"
                                                 position="top" // Position labels above the bars
                                                 offset={8}
                                                 className="fill-foreground font-medium"
-                                                fontSize={11} // Slightly smaller font size
-                                                formatter={(value: number) => (value > 0 ? value : '')}
+                                                fontSize={11}
+                                                formatter={(value: number) => (value > 0 ? value : '')} // Only show label if count > 0
                                             />
                                         </Bar>
                                      </BarChart>

@@ -5,10 +5,11 @@ export type Category = 'well' | 'improve' | 'discuss' | 'action';
 export interface User {
   id: string; // Corresponds to Firebase UID
   name: string; // Corresponds to Firebase displayName or a fallback
-  email?: string | null; // Optional: Corresponds to Firebase email
-  avatarUrl?: string | null; // Optional: Corresponds to Firebase photoURL or custom avatar URL
+  email: string; // Email is required for Gravatar
+  avatarUrl: string; // Gravatar URL or a fallback URL
   // Add other relevant fields if needed, e.g., from Firestore user document
   // teamIds?: string[];
+  role?: 'admin' | 'member'; // Optional: Add roles for permissions
 }
 
 export interface RetroItem {

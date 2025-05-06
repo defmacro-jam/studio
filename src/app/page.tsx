@@ -22,35 +22,46 @@ import { Button } from '@/components/ui/button'; // Import Button
 import { LogOut } from 'lucide-react'; // Import LogOut icon
 import ProtectedRoute from '@/components/auth/ProtectedRoute'; // Import ProtectedRoute
 import { useAuth } from '@/context/AuthContext'; // Import useAuth
+import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
 
-// Remove Mock current user
-// const mockCurrentUser: User = {
-//   id: 'user-123',
-//   name: 'Alex Doe',
-//   avatarUrl: 'https://picsum.photos/id/1/100/100',
-// };
 
 // Mock initial data - replace with API/DB calls later
+// Helper function to generate mock users with Gravatar fallbacks
+const generateMockUser = (id: string, name: string, emailSuffix: string): User => {
+    const email = `${name.toLowerCase().replace(' ', '.')}${emailSuffix}@example.com`;
+    return {
+        id: id,
+        name: name,
+        email: email,
+        avatarUrl: getGravatarUrl(email, 100)!, // Use Gravatar, assuming it won't be null
+    };
+};
+
+const mockUserAlex = generateMockUser('user-123', 'Alex Doe', '');
+const mockUserBob = generateMockUser('user-456', 'Bob Smith', '1');
+const mockUserCharlie = generateMockUser('user-789', 'Charlie Brown', '2');
+const mockUserDana = generateMockUser('user-555', 'Dana Scully', '3');
+
 const mockInitialItems: RetroItem[] = [
-    { id: 'w1', author: { id: 'user-456', name: 'Bob Smith', avatarUrl: 'https://picsum.photos/id/2/100/100' }, content: 'Great collaboration on the login feature!', timestamp: new Date(Date.now() - 3600000 * 2), category: 'well' },
-    { id: 'i1', author: { id: 'user-789', name: 'Charlie Brown', avatarUrl: 'https://picsum.photos/id/3/100/100' }, content: 'Deployment process was a bit slow this week.', timestamp: new Date(Date.now() - 3600000 * 3), category: 'improve' },
-    { id: 'd1', author: { id: 'user-456', name: 'Bob Smith', avatarUrl: 'https://picsum.photos/id/2/100/100' }, content: 'Should we reconsider our testing strategy?', timestamp: new Date(Date.now() - 3600000 * 1), category: 'discuss' },
-    { id: 'a1', author: { id: 'user-123', name: 'Alex Doe', avatarUrl: 'https://picsum.photos/id/1/100/100' }, content: 'Alex to update documentation by EOD Friday.', timestamp: new Date(Date.now() - 3600000 * 0.5), category: 'action' },
-    { id: 'w2', author: { id: 'user-789', name: 'Charlie Brown', avatarUrl: 'https://picsum.photos/id/3/100/100' }, content: 'Code reviews were very thorough.', timestamp: new Date(Date.now() - 3600000 * 5), category: 'well', replies: [
-        { id: 'r1', author: { id: 'user-123', name: 'Alex Doe', avatarUrl: 'https://picsum.photos/id/1/100/100' }, content: 'Agreed, learned a lot!', timestamp: new Date(Date.now() - 3600000 * 4) }
+    { id: 'w1', author: mockUserBob, content: 'Great collaboration on the login feature!', timestamp: new Date(Date.now() - 3600000 * 2), category: 'well' },
+    { id: 'i1', author: mockUserCharlie, content: 'Deployment process was a bit slow this week.', timestamp: new Date(Date.now() - 3600000 * 3), category: 'improve' },
+    { id: 'd1', author: mockUserBob, content: 'Should we reconsider our testing strategy?', timestamp: new Date(Date.now() - 3600000 * 1), category: 'discuss' },
+    { id: 'a1', author: mockUserAlex, content: 'Alex to update documentation by EOD Friday.', timestamp: new Date(Date.now() - 3600000 * 0.5), category: 'action' },
+    { id: 'w2', author: mockUserCharlie, content: 'Code reviews were very thorough.', timestamp: new Date(Date.now() - 3600000 * 5), category: 'well', replies: [
+        { id: 'r1', author: mockUserAlex, content: 'Agreed, learned a lot!', timestamp: new Date(Date.now() - 3600000 * 4), category: 'well' } // Reply needs category
     ]},
-    { id: 'd2', author: { id: 'user-123', name: 'Alex Doe', avatarUrl: 'https://picsum.photos/id/1/100/100' }, content: 'Need clarity on the Q3 roadmap priorities.', timestamp: new Date(Date.now() - 3600000 * 1.5), category: 'discuss' },
-    { id: 'w3', author: { id: 'user-123', name: 'Alex Doe', avatarUrl: 'https://picsum.photos/id/1/100/100' }, content: 'Manual item: Test move well to improve', timestamp: new Date(Date.now() - 3600000 * 0.8), category: 'well' },
-    { id: 'i2', author: { id: 'user-123', name: 'Alex Doe', avatarUrl: 'https://picsum.photos/id/1/100/100' }, content: 'Manual item: Test move improve to well', timestamp: new Date(Date.now() - 3600000 * 0.7), category: 'improve' },
+    { id: 'd2', author: mockUserAlex, content: 'Need clarity on the Q3 roadmap priorities.', timestamp: new Date(Date.now() - 3600000 * 1.5), category: 'discuss' },
+    { id: 'w3', author: mockUserAlex, content: 'Manual item: Test move well to improve', timestamp: new Date(Date.now() - 3600000 * 0.8), category: 'well' },
+    { id: 'i2', author: mockUserAlex, content: 'Manual item: Test move improve to well', timestamp: new Date(Date.now() - 3600000 * 0.7), category: 'improve' },
 ];
 
 const mockInitialPollResponses: PollResponse[] = [
-     { id: 'p1', author: { id: 'user-456', name: 'Bob Smith', avatarUrl: 'https://picsum.photos/id/2/100/100' }, rating: 4, justification: 'Good progress overall, minor hiccup with API.', timestamp: new Date(Date.now() - 3600000 * 6) },
-     { id: 'p2', author: { id: 'user-789', name: 'Charlie Brown', avatarUrl: 'https://picsum.photos/id/3/100/100' }, rating: 5, justification: "Loved the free cookies!", timestamp: new Date(Date.now() - 3600000 * 7) },
-     { id: 'p3', author: { id: 'user-555', name: 'Dana Scully', avatarUrl: 'https://picsum.photos/id/4/100/100' }, rating: 2, justification: "Project X team was overly needy on the help channel.", timestamp: new Date(Date.now() - 3600000 * 8) },
+     { id: 'p1', author: mockUserBob, rating: 4, justification: 'Good progress overall, minor hiccup with API.', timestamp: new Date(Date.now() - 3600000 * 6) },
+     { id: 'p2', author: mockUserCharlie, rating: 5, justification: "Loved the free cookies!", timestamp: new Date(Date.now() - 3600000 * 7) },
+     { id: 'p3', author: mockUserDana, rating: 2, justification: "Project X team was overly needy on the help channel.", timestamp: new Date(Date.now() - 3600000 * 8) },
      // Remove current user's mock response, will rely on actual auth
-     // { id: 'p4', author: { id: 'user-123', name: 'Alex Doe', avatarUrl: 'https://picsum.photos/id/1/100/100' }, rating: 3, justification: "Initial test justification.", timestamp: new Date(Date.now() - 3600000 * 9) },
 ];
+
 
 // Main component content refactored
 function RetroSpectifyPageContent() {
@@ -82,40 +93,50 @@ function RetroSpectifyPageContent() {
            // Fetch Firestore user data
            const userDocRef = doc(db, 'users', currentUser.uid);
            const userDocSnap = await getDoc(userDocRef);
+
            if (userDocSnap.exists()) {
                 const userData = userDocSnap.data();
-                // Map FirebaseUser + Firestore data to your User type
-                setAppUser({
-                   id: currentUser.uid,
-                   name: currentUser.displayName || userData.displayName || 'User',
-                   // Use photoURL from Firebase Auth if available, else from Firestore
-                   avatarUrl: currentUser.photoURL || userData.avatarUrl || `https://picsum.photos/seed/${currentUser.uid}/100/100` // Fallback placeholder
-                });
+                 // Construct the User object
+                 const resolvedUser: User = {
+                    id: currentUser.uid,
+                    name: currentUser.displayName || userData.displayName || currentUser.email?.split('@')[0] || 'User',
+                    email: currentUser.email || userData.email || 'unknown@example.com', // Ensure email exists
+                    // Use avatarUrl from Firestore first, then Auth, then generate Gravatar as fallback
+                    avatarUrl: userData.avatarUrl || currentUser.photoURL || getGravatarUrl(currentUser.email, 100)!,
+                    role: userData.role || 'member', // Include role if available
+                 };
+                setAppUser(resolvedUser);
            } else {
-               // Handle case where user exists in Auth but not Firestore (optional)
+               // Handle case where user exists in Auth but not Firestore (create basic user object)
                console.warn("User document not found in Firestore for UID:", currentUser.uid);
-               setAppUser({ // Create a basic user object
+               const fallbackEmail = currentUser.email || `${currentUser.uid}@example.com`; // Create a fallback email
+               setAppUser({
                   id: currentUser.uid,
-                  name: currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
-                  avatarUrl: currentUser.photoURL || `https://picsum.photos/seed/${currentUser.uid}/100/100`
+                  name: currentUser.displayName || fallbackEmail.split('@')[0] || 'User',
+                  email: fallbackEmail,
+                  avatarUrl: currentUser.photoURL || getGravatarUrl(fallbackEmail, 100)!, // Use photoURL or generate Gravatar
+                  role: 'member', // Default role
                });
            }
 
          // --- Replace Mock Data Fetching with Real DB Calls ---
-         // TODO: Fetch retroItems for the current team from Firestore
-         // TODO: Fetch pollResponses for the current team from Firestore
-         // Example placeholder using mock data for now:
-         setRetroItems(mockInitialItems);
-         setPollResponses(mockInitialPollResponses);
+         // TODO: Fetch retroItems for the current team/user scope from Firestore
+         // TODO: Fetch pollResponses for the current team/user scope from Firestore
+         setRetroItems(mockInitialItems); // Using mock for now
+         setPollResponses(mockInitialPollResponses); // Using mock for now
 
-         // Check if current user has submitted a poll response
+         // Check if current user has submitted a poll response based on fetched data
           const userResponseExists = mockInitialPollResponses.some(resp => resp.author.id === currentUser.uid);
          setHasSubmitted(userResponseExists);
-         // You might also store submission status in user doc or team-specific subcollection
 
-       } catch (error) {
+
+       } catch (error: any) {
          console.error("Error fetching initial data:", error);
-         toast({ title: "Error", description: "Could not load initial data.", variant: "destructive" });
+          if (error.code === 'permission-denied') {
+              toast({ title: "Permission Denied", description: "You don't have permission to access this data. Check Firestore rules.", variant: "destructive", duration: 10000 });
+          } else {
+              toast({ title: "Error", description: "Could not load initial data.", variant: "destructive" });
+          }
        } finally {
          setIsLoading(false);
        }
@@ -129,10 +150,8 @@ function RetroSpectifyPageContent() {
   useEffect(() => {
      if (!currentUser) return;
     const userResponseExists = pollResponses.some(resp => resp.author.id === currentUser.uid);
-    if (userResponseExists) {
-      setHasSubmitted(true);
-      // TODO: Persist submission status to DB if needed
-    }
+    setHasSubmitted(userResponseExists); // Update state based on fetched poll responses
+    // No need to persist submission status here, it's derived from pollResponses
   }, [pollResponses, currentUser]);
 
 
@@ -169,12 +188,13 @@ function RetroSpectifyPageContent() {
       const author = appUser; // Use the appUser state
 
       if (!justification.trim()) {
+          // If no justification, add a single item based on rating
           const category = rating >= 4 ? 'well' : rating <= 2 ? 'improve' : 'discuss';
           const newItem: RetroItem = {
-              id: `poll-${responseId}-rating`, // TODO: Use DB generated ID
+              id: `poll-${responseId}-ratingonly`, // TODO: Use DB generated ID
               pollResponseId: responseId,
               author: author,
-              content: `Rated ${rating} stars (No justification)`,
+              content: `Rated ${rating} stars.`, // Simple content for rating-only
               timestamp: new Date(), // Use serverTimestamp in DB
               category: category,
               isFromPoll: true,
@@ -185,11 +205,16 @@ function RetroSpectifyPageContent() {
               title: isEditingPoll ? "Feedback Updated" : "Feedback Added",
               description: `Your rating was added to "${category === 'well' ? 'What Went Well' : category === 'improve' ? 'What Could Be Improved' : 'Discussion Topics'}".`,
           });
-          return;
+          return; // Exit early as there's no text to categorize
       }
 
+
+      // If justification exists, call the categorization AI
       try {
+          // console.log("Calling categorizeJustification with:", { rating, justification });
           const categorizedSentences = await categorizeJustification({ rating, justification });
+          // console.log("Categorization result:", categorizedSentences);
+
 
           if (categorizedSentences && categorizedSentences.length > 0) {
             const newItems: RetroItem[] = categorizedSentences.map((categorizedSentence, index) => ({
@@ -198,7 +223,7 @@ function RetroSpectifyPageContent() {
                 author: author,
                 content: categorizedSentence.sentence,
                 timestamp: new Date(), // Use serverTimestamp in DB
-                category: categorizedSentence.category,
+                category: categorizedSentence.category, // Use AI category ('well' or 'improve')
                 isFromPoll: true,
             }));
 
@@ -221,21 +246,21 @@ function RetroSpectifyPageContent() {
                  description: description,
              });
           } else if (justification.trim()) {
-             // If AI returns empty but justification exists, treat as discussion
+             // If AI returns empty but justification exists, treat the whole justification as 'discuss'
              const newItem: RetroItem = {
                id: `poll-${responseId}-discuss`, // TODO: Use DB generated ID
                pollResponseId: responseId,
                author: author,
                content: justification, // Use the full justification
                timestamp: new Date(), // Use serverTimestamp in DB
-               category: 'discuss', // Default to discuss if no categories found
+               category: 'discuss', // Default to discuss if no specific sentences categorized
                isFromPoll: true,
              };
               // TODO: Add newItem to DB
              setRetroItems(prev => [...prev, newItem]);
              toast({
                title: isEditingPoll ? "Feedback Updated" : "Feedback Added",
-               description: "Your feedback couldn't be auto-categorized, added to 'Discussion Topics'.",
+               description: "Your feedback couldn't be auto-categorized by sentence, added to 'Discussion Topics'.",
                variant: "default",
              });
           }
@@ -246,6 +271,7 @@ function RetroSpectifyPageContent() {
             description: "Could not automatically categorize your feedback. Added to 'Discussion Topics'.",
             variant: "destructive",
           });
+           // Fallback: Add the entire justification as a 'discuss' item on error
            const newItem: RetroItem = {
                id: `poll-${responseId}-error`, // TODO: Use DB generated ID
                pollResponseId: responseId,
@@ -300,7 +326,6 @@ function RetroSpectifyPageContent() {
         setPollResponses(prev => [...prev, newResponse]);
         setHasSubmitted(true); // Update local submission state
 
-        // TODO: Persist submission status locally/DB if needed
          toast({
              title: "Poll Response Submitted",
              description: "Thank you for your feedback!",
@@ -326,7 +351,7 @@ function RetroSpectifyPageContent() {
       content,
       timestamp: new Date(), // Use serverTimestamp in DB
       category,
-      isFromPoll: false,
+      isFromPoll: false, // Manually added items are not from the poll
     };
      // TODO: Add newItem to DB
     setRetroItems(prev => [...prev, newItem]);
@@ -343,7 +368,7 @@ function RetroSpectifyPageContent() {
       const discussionItem = retroItems.find(item => item.id === discussionItemId);
 
       if (!discussionItem || discussionItem.category !== 'discuss') {
-          toast({ title: "Error", description: "Could not find the discussion topic.", variant: "destructive" });
+          toast({ title: "Error", description: "Could not find the discussion topic or it's not a discussion item.", variant: "destructive" });
           return;
       }
 
@@ -387,6 +412,10 @@ function RetroSpectifyPageContent() {
   const handleAddReply = useCallback((itemId: string, replyContent: string) => {
      if (!appUser) return; // Ensure appUser is loaded
 
+    // Find the parent item to inherit its category
+    const parentItem = retroItems.find(item => item.id === itemId);
+    if (!parentItem) return; // Should not happen if UI is correct
+
     // TODO: Update replies in DB (potentially nested or separate collection)
     setRetroItems(prev => prev.map(item => {
       if (item.id === itemId) {
@@ -395,8 +424,8 @@ function RetroSpectifyPageContent() {
           author: appUser,
           content: replyContent,
           timestamp: new Date(), // Use serverTimestamp in DB
-          isFromPoll: false,
-          category: item.category, // Replies inherit category
+          isFromPoll: false, // Replies are not directly from poll submission
+          category: parentItem.category, // Replies inherit category of parent item
         };
         return {
           ...item,
@@ -408,7 +437,7 @@ function RetroSpectifyPageContent() {
      toast({
         title: "Reply Added",
      });
-  }, [appUser, toast]); // Depend on appUser
+  }, [appUser, retroItems, toast]); // Include retroItems in dependencies
 
    const handleDeleteItem = useCallback((itemId: string) => {
      if (!appUser) return; // Ensure appUser is loaded
@@ -416,7 +445,7 @@ function RetroSpectifyPageContent() {
      const itemToDelete = retroItems.find(item => item.id === itemId);
      if (!itemToDelete) return;
 
-     // Basic permission check: Can only delete own items, unless maybe admin/owner later
+     // Basic permission check: Can only delete own items
      if (itemToDelete.author.id !== appUser.id) {
           toast({
              title: "Cannot Delete",
@@ -427,10 +456,11 @@ function RetroSpectifyPageContent() {
      }
 
      // Prevent deleting items generated from the current user's *uneditable* poll response
+     // Allow deletion if the poll is currently being edited
      if (itemToDelete.isFromPoll && itemToDelete.author.id === appUser.id && !isEditingPoll) {
          toast({
             title: "Cannot Delete Poll Item",
-            description: "Edit your poll response to change items derived from it.",
+            description: "Edit your poll response to change items derived from it, or delete the entire response.",
             variant: "destructive"
          });
          return;
@@ -447,8 +477,18 @@ function RetroSpectifyPageContent() {
 
    // --- Drag and Drop Handlers ---
    const handleDragStart = useCallback((itemId: string) => {
-     setDraggingItemId(itemId);
-   }, []);
+     // Check if the item being dragged belongs to the current user
+     const item = retroItems.find(i => i.id === itemId);
+      if (item && item.author.id === appUser?.id) {
+         setDraggingItemId(itemId);
+     } else {
+          // Prevent dragging if item doesn't belong to user
+         setDraggingItemId(null);
+         // Optional: Show a toast or visual feedback
+         // toast({ title: "Cannot Drag", description: "You can only move your own items.", variant: "destructive"});
+         console.log("Attempted to drag another user's item.");
+     }
+   }, [retroItems, appUser]); // Add dependencies
 
 
    const handleDragEnd = useCallback(() => {
@@ -456,47 +496,62 @@ function RetroSpectifyPageContent() {
    }, []);
 
     const handleMoveItem = useCallback((itemId: string, targetCategory: Category) => {
-        if (!appUser) return; // Ensure appUser is loaded
+        if (!appUser) {
+             console.error("Cannot move item: User not loaded.");
+             return;
+         } // Ensure appUser is loaded
 
         const itemToMove = retroItems.find(item => item.id === itemId);
 
-        // Check if item exists and belongs to the current user
-        if (!itemToMove || itemToMove.author.id !== appUser.id) {
-             toast({
-                title: "Cannot Move Item",
-                description: "You can only move your own items.",
-                variant: "destructive"
-            });
-            setDraggingItemId(null); // Clear dragging state
+        // Check if item exists
+        if (!itemToMove) {
+            console.error("Cannot move item: Item not found.");
+            toast({ title: "Move Error", description: "Item not found.", variant: "destructive" });
+            setDraggingItemId(null);
             return;
         }
 
+         // Check if the item belongs to the current user
+         if (itemToMove.author.id !== appUser.id) {
+             console.log("Prevented move: Item does not belong to user.");
+             toast({
+                 title: "Cannot Move Item",
+                 description: "You can only move your own items.",
+                 variant: "destructive"
+             });
+             setDraggingItemId(null); // Clear dragging state
+             return;
+         }
+
         // Check if the category is actually changing
         if (itemToMove.category === targetCategory) {
+            console.log("Move cancelled: Same category.");
             setDraggingItemId(null); // No change, clear dragging state
             return;
         }
 
         // *** Special Case: Moving from 'discuss' to 'action' ***
         if (itemToMove.category === 'discuss' && targetCategory === 'action') {
+            console.log("Triggering action item generation for:", itemId);
             handleGenerateActionItem(itemId); // Trigger AI generation
             // Don't move the original item, just generate a new one
             setDraggingItemId(null);
-            return;
+            return; // Stop further processing for this specific case
         }
 
          // *** Restriction: Prevent moving *anything else* directly into 'action' ***
          if (targetCategory === 'action' && itemToMove.category !== 'discuss') {
+             console.log("Prevented move: Cannot move non-discussion to action.");
              toast({
                  title: "Cannot Move to Action Items",
-                 description: "Action Items are generated from Discussion Topics or added manually.",
+                 description: "Action Items can only be generated from Discussion Topics or added manually.",
                  variant: "destructive",
              });
              setDraggingItemId(null);
-             return;
+             return; // Stop the move
          }
 
-         // *** Check for moving between 'well' and 'improve' ***
+         // --- Check for moving between 'well' and 'improve' and prompt for rating adjustment ---
          const isWellToImprove = itemToMove.category === 'well' && targetCategory === 'improve';
          const isImproveToWell = itemToMove.category === 'improve' && targetCategory === 'well';
 
@@ -505,60 +560,139 @@ function RetroSpectifyPageContent() {
                  ? Math.max(1, currentUserResponse.rating - 1) // Decrease rating, min 1
                  : Math.min(5, currentUserResponse.rating + 1); // Increase rating, max 5
 
+             // Only show modal if suggested rating is different from current
              if (suggestedRating !== currentUserResponse.rating) {
+                console.log("Prompting for rating adjustment.");
                 setRatingAdjustmentProps({
                     currentRating: currentUserResponse.rating,
                     suggestedRating: suggestedRating,
                 });
                 setIsAdjustRatingModalOpen(true);
+                 // Don't immediately move the item - wait for modal confirmation/cancellation
+                // The move happens *after* the modal interaction OR if no modal is needed
+             } else {
+                  console.log("Rating adjustment not needed, moving directly.");
+                 // Proceed with the move immediately if no rating change suggested
+                 // TODO: Update item category in DB
+                 setRetroItems(prev =>
+                     prev.map(item =>
+                         item.id === itemId
+                             ? { ...item, category: targetCategory, timestamp: new Date() } // Use serverTimestamp in DB
+                             : item
+                     )
+                 );
+                 toast({
+                     title: "Item Moved",
+                     description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`
+                 });
              }
+         } else {
+             console.log("Moving item directly (not well<=>improve or no poll response).");
+             // --- Generic Move Logic (if not well<=>improve or no poll response) ---
+             // TODO: Update item category in DB
+             setRetroItems(prev =>
+                 prev.map(item =>
+                     item.id === itemId
+                         ? { ...item, category: targetCategory, timestamp: new Date() } // Use serverTimestamp in DB
+                         : item
+                 )
+             );
+             toast({
+                 title: "Item Moved",
+                 description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`
+             });
          }
 
-        // --- Generic Move Logic (commit the move visually first) ---
-        // TODO: Update item category in DB
-        setRetroItems(prev =>
-            prev.map(item =>
-                item.id === itemId
-                    ? { ...item, category: targetCategory, timestamp: new Date() } // Use serverTimestamp in DB
-                    : item
-            )
-        );
-        toast({
-            title: "Item Moved",
-            description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`
-        });
 
-        setDraggingItemId(null); // Clear dragging state after a successful move
+        setDraggingItemId(null); // Clear dragging state after initiating move or showing modal
 
     }, [appUser, retroItems, toast, handleGenerateActionItem, currentUserResponse]); // Depend on appUser
 
     // Handler for AdjustRatingModal confirmation
     const handleAdjustRatingConfirm = useCallback((newRating: number) => {
-        if (!currentUserResponse || !appUser) return;
+        if (!currentUserResponse || !appUser || !draggingItemId) return; // Ensure draggingItemId exists
 
-        // TODO: Update poll response rating in DB
-        setPollResponses(prev =>
-            prev.map(resp =>
-                resp.id === currentUserResponse.id
-                    ? { ...resp, rating: newRating, timestamp: new Date() } // Use serverTimestamp in DB
-                    : resp
-            )
-        );
+         // Find the item that was being dragged (though draggingItemId should be correct)
+         const itemToMove = retroItems.find(item => item.id === draggingItemId);
+         if (!itemToMove) {
+             console.error("Error adjusting rating: Original item not found.");
+             setIsAdjustRatingModalOpen(false);
+             setRatingAdjustmentProps(null);
+             setDraggingItemId(null); // Clear dragging state on error
+             return;
+         }
+
+         // Determine the target category based on the direction of the move
+         const targetCategory = itemToMove.category === 'well' ? 'improve' : 'well';
+
+         // 1. Update poll response rating in state and DB
+         // TODO: Update poll response rating in DB
+         setPollResponses(prev =>
+             prev.map(resp =>
+                 resp.id === currentUserResponse.id
+                     ? { ...resp, rating: newRating, timestamp: new Date() } // Use serverTimestamp in DB
+                     : resp
+             )
+         );
+
+         // 2. Move the retro item in state and DB
+         // TODO: Update item category in DB
+         setRetroItems(prev =>
+             prev.map(item =>
+                 item.id === draggingItemId
+                     ? { ...item, category: targetCategory, timestamp: new Date() } // Use serverTimestamp
+                     : item
+             )
+         );
 
         toast({
-            title: "Rating Adjusted",
-            description: `Your sentiment poll rating was updated to ${newRating} stars.`,
+            title: "Rating Adjusted & Item Moved",
+            description: `Your sentiment rating updated to ${newRating} stars and item moved.`,
         });
 
-        setIsAdjustRatingModalOpen(false); // Close modal
-        setRatingAdjustmentProps(null); // Clear props
-    }, [currentUserResponse, appUser, toast]); // Depend on appUser
+        // 3. Close modal and clear states
+        setIsAdjustRatingModalOpen(false);
+        setRatingAdjustmentProps(null);
+        setDraggingItemId(null); // Ensure dragging state is cleared
 
-    // Handler for AdjustRatingModal cancellation
+    }, [currentUserResponse, appUser, toast, draggingItemId, retroItems]); // Add draggingItemId and retroItems
+
+    // Handler for AdjustRatingModal cancellation - Move the item anyway, but don't change rating
     const handleAdjustRatingCancel = useCallback(() => {
+         if (!draggingItemId) return; // Should have an item ID if modal was open
+
+         const itemToMove = retroItems.find(item => item.id === draggingItemId);
+         if (!itemToMove) {
+             console.error("Error cancelling rating adjustment: Original item not found.");
+             setIsAdjustRatingModalOpen(false);
+             setRatingAdjustmentProps(null);
+             setDraggingItemId(null); // Clear dragging state on error
+             return;
+         }
+
+         // Determine the target category
+         const targetCategory = itemToMove.category === 'well' ? 'improve' : 'well';
+
+         // Move the retro item without changing the rating
+         // TODO: Update item category in DB
+         setRetroItems(prev =>
+             prev.map(item =>
+                 item.id === draggingItemId
+                     ? { ...item, category: targetCategory, timestamp: new Date() } // Use serverTimestamp
+                     : item
+             )
+         );
+
+         toast({
+             title: "Item Moved",
+             description: `Item moved, but sentiment rating kept at ${ratingAdjustmentProps?.currentRating || 'previous'} stars.`,
+         });
+
+
         setIsAdjustRatingModalOpen(false); // Close modal
         setRatingAdjustmentProps(null); // Clear props
-    }, []);
+        setDraggingItemId(null); // Clear dragging state
+    }, [draggingItemId, retroItems, toast, ratingAdjustmentProps]); // Add dependencies
 
     // --- Logout Handler ---
     const handleLogout = async () => {
@@ -576,12 +710,15 @@ function RetroSpectifyPageContent() {
 
   const filterItems = (category: Category) => {
     // Filter top-level items (not replies) by category and sort by timestamp
-    const topLevelItems = retroItems.filter(item => !retroItems.some(parent => parent.replies?.some(reply => reply.id === item.id)));
+    // Ensure replies exist before trying to access them
+    const topLevelItems = retroItems.filter(item =>
+        !retroItems.some(parent => parent.replies && parent.replies.some(reply => reply.id === item.id))
+    );
     return topLevelItems.filter(item => item.category === category).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
   };
 
    // Loading state UI
-  if (isLoading || !appUser) { // Show loading if appUser isn't loaded yet
+  if (isLoading || !appUser) { // Show loading if auth is loading OR appUser isn't loaded yet
     return (
       <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
         <header className="mb-8 flex justify-between items-center">
@@ -621,6 +758,7 @@ function RetroSpectifyPageContent() {
             <div className="flex items-center space-x-3">
                 <span className="text-sm font-medium hidden sm:inline">{appUser.name}</span>
                 <Avatar>
+                    {/* Use Gravatar URL stored in appUser */}
                     <AvatarImage src={appUser.avatarUrl} alt={appUser.name} data-ai-hint="avatar profile picture"/>
                     <AvatarFallback>{appUser.name.charAt(0).toUpperCase()}</AvatarFallback>
                 </Avatar>
@@ -637,17 +775,23 @@ function RetroSpectifyPageContent() {
              <PollSection
                 currentUser={appUser} // Use appUser
                 onSubmitPoll={handlePollSubmit}
-                initialRating={isEditingPoll ? currentUserResponse?.rating : undefined}
-                initialJustification={isEditingPoll ? currentUserResponse?.justification : undefined}
+                initialRating={isEditingPoll ? currentUserResponse?.rating : 0} // Default to 0 if not editing
+                initialJustification={isEditingPoll ? currentUserResponse?.justification : ''} // Default to empty if not editing
                 isEditing={isEditingPoll}
             />
         )}
-         {shouldShowResults && (
+         {shouldShowResults && currentUserResponse && ( // Only show results if user has submitted
             <PollResultsSection
                 responses={pollResponses}
                 onEdit={handleEditPoll}
                 currentUserHasVoted={!!currentUserResponse}
             />
+         )}
+          {/* Show a message if results aren't shown because the user hasn't voted */}
+         {!shouldShowPollForm && !currentUserResponse && (
+              <Card className="shadow-md border border-input bg-card text-center p-6">
+                  <CardDescription>Submit your sentiment in the poll above to see the team results.</CardDescription>
+              </Card>
          )}
       </div>
 
@@ -705,19 +849,19 @@ function RetroSpectifyPageContent() {
           currentUser={appUser} // Use appUser
           onAddItem={handleAddItem('action')}
           onAddReply={handleAddReply}
-          onMoveItem={handleMoveItem}
+          onMoveItem={handleMoveItem} // Pass move handler, logic inside handles action item specifics
           onDeleteItem={handleDeleteItem}
-          allowAddingItems={true}
+          allowAddingItems={true} // Allow manual adding to Action Items
           draggingItemId={draggingItemId}
           onDragStartItem={handleDragStart}
           onDragEndItem={handleDragEnd}
           className="bg-purple-50/50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-700/50"
-          isDropTargetForActionGeneration={true}
+          isDropTargetForActionGeneration={true} // Mark as special drop target
         />
       </div>
 
        {/* Rating Adjustment Modal */}
-       {ratingAdjustmentProps && (
+       {ratingAdjustmentProps && isAdjustRatingModalOpen && ( // Ensure modal only renders when needed
          <AdjustRatingModal
            isOpen={isAdjustRatingModalOpen}
            currentRating={ratingAdjustmentProps.currentRating}

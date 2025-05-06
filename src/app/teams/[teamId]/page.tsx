@@ -14,12 +14,13 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, UserPlus, Trash2, Mail, Crown, Users } from 'lucide-react'; // Added Users icon
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
 
 interface TeamMember {
   uid: string;
   email: string;
   displayName?: string;
-  avatarUrl?: string;
+  avatarUrl?: string; // Can be optional if using Gravatar as primary
 }
 
 interface TeamData {
@@ -66,19 +67,23 @@ function TeamPageContent() {
                      return;
                 }
                setTeamData({ id: teamDocSnap.id, ...data });
+               setLoadingTeam(false); // Team data loaded successfully
            } else {
                setError('Team not found.');
                toast({ title: 'Error', description: 'Team not found.', variant: 'destructive' });
                setLoadingTeam(false); // Stop loading
                router.push('/'); // Redirect if team doesn't exist
            }
-       } catch (err) {
-           console.error('Error fetching team data:', err);
-           setError('Failed to load team data.');
-           toast({ title: 'Error', description: 'Could not load team details.', variant: 'destructive' });
-           setLoadingTeam(false); // Stop loading
-       } finally {
-            // Moved setLoading(false) inside conditional blocks to avoid setting it prematurely on error/redirect
+       } catch (err: any) {
+            console.error('Error fetching team data:', err);
+            setError('Failed to load team data.');
+             if (err.code === 'permission-denied') {
+                 setError("Permission denied. Check Firestore rules.");
+                 toast({ title: 'Permission Denied', description: 'You lack permissions to view this team.', variant: 'destructive' });
+             } else {
+                 toast({ title: 'Error', description: 'Could not load team details.', variant: 'destructive' });
+             }
+            setLoadingTeam(false); // Stop loading on error
        }
    }, [teamId, currentUser, router, toast]); // Add dependencies
 
@@ -90,18 +95,48 @@ function TeamPageContent() {
        }
        setLoadingMembers(true);
        try {
-            // Firestore allows querying up to 30 elements in 'in' array query in a single request
-            // If team members exceed this, pagination or multiple queries are needed.
-            // For simplicity, assuming teams are smaller than 30 for now.
-           const membersQuery = query(collection(db, 'users'), where('uid', 'in', teamData.members));
-           const querySnapshot = await getDocs(membersQuery);
-           const membersData = querySnapshot.docs.map(doc => doc.data() as TeamMember);
+            // Firestore allows querying up to 30 elements in 'in' array query in a single request.
+            // Handle larger teams if necessary (chunking queries).
+            const memberUids = teamData.members;
+            const membersData: TeamMember[] = [];
+            const chunkSize = 30;
 
-           // Create a map for quick lookup
-            const memberMap = new Map(membersData.map(m => [m.uid, m]));
+            for (let i = 0; i < memberUids.length; i += chunkSize) {
+                const chunk = memberUids.slice(i, i + chunkSize);
+                if (chunk.length === 0) continue; // Avoid empty query
 
-            // Ensure all members from teamData.members are included, even if missing in users collection (though unlikely)
-            const fullMemberList = teamData.members.map(uid => memberMap.get(uid) || { uid, email: 'Unknown User', displayName: 'Unknown User' });
+                const membersQuery = query(collection(db, 'users'), where('uid', 'in', chunk));
+                const querySnapshot = await getDocs(membersQuery);
+                querySnapshot.docs.forEach(docSnap => {
+                    const data = docSnap.data();
+                     // Construct TeamMember with Gravatar fallback
+                    membersData.push({
+                        uid: data.uid,
+                        email: data.email || 'unknown@example.com', // Ensure email exists
+                        displayName: data.displayName || data.email?.split('@')[0] || 'Unknown User',
+                        avatarUrl: data.avatarUrl || getGravatarUrl(data.email, 96)!, // Use stored or generate Gravatar
+                    });
+                });
+            }
+
+
+           // Create a map for quick lookup using fetched data
+           const memberMap = new Map(membersData.map(m => [m.uid, m]));
+
+           // Ensure all members from teamData.members are included, creating placeholders if missing
+           const fullMemberList = teamData.members.map(uid => {
+               const foundMember = memberMap.get(uid);
+               if (foundMember) return foundMember;
+               // Placeholder for members in team list but not found in users collection (less likely now with chunking)
+               console.warn(`User data not found for UID: ${uid}. Using placeholder.`);
+               const fallbackEmail = `${uid}@unknown.com`;
+                return {
+                    uid,
+                    email: fallbackEmail,
+                    displayName: 'Unknown User',
+                    avatarUrl: getGravatarUrl(fallbackEmail, 96)!
+                };
+           });
 
 
            // Sort members: Owner first, then alphabetically by display name or email
@@ -114,9 +149,13 @@ function TeamPageContent() {
            });
 
            setTeamMembers(fullMemberList);
-       } catch (err) {
+       } catch (err: any) {
            console.error('Error fetching team members:', err);
-           toast({ title: 'Error', description: 'Could not load team members.', variant: 'destructive' });
+             if (err.code === 'permission-denied') {
+                 toast({ title: 'Permission Denied', description: 'Could not load team members due to Firestore rules.', variant: 'destructive' });
+             } else {
+                toast({ title: 'Error', description: 'Could not load team members.', variant: 'destructive' });
+             }
        } finally {
            setLoadingMembers(false);
        }
@@ -135,7 +174,7 @@ function TeamPageContent() {
   }, [teamId, currentUser, fetchTeamData]); // Run when teamId or currentUser changes
 
   useEffect(() => {
-    // Fetch members only if teamData is loaded successfully
+    // Fetch members only if teamData is loaded successfully and no error occurred
     if (teamData && !error) {
       fetchTeamMembers();
     }
@@ -165,7 +204,7 @@ function TeamPageContent() {
 
         const userDoc = querySnapshot.docs[0];
         const userId = userDoc.id;
-        const userData = userDoc.data() as TeamMember; // Cast to TeamMember
+        const userData = userDoc.data(); // Get user data
 
         // 2. Check if user is already a member
         if (teamData.members.includes(userId)) {
@@ -200,8 +239,13 @@ function TeamPageContent() {
 
     } catch (err: any) {
       console.error('Invite error:', err);
-      setInviteError('Failed to add member. Please try again.');
-      toast({ title: 'Invite Failed', description: 'An error occurred.', variant: 'destructive' });
+       if (err.code === 'permission-denied') {
+           setInviteError('Permission denied. Check Firestore rules.');
+           toast({ title: 'Invite Failed', description: 'Permission denied to update data.', variant: 'destructive' });
+       } else {
+           setInviteError('Failed to add member. Please try again.');
+           toast({ title: 'Invite Failed', description: 'An error occurred.', variant: 'destructive' });
+       }
     } finally {
       setIsInviting(false);
     }
@@ -239,8 +283,13 @@ function TeamPageContent() {
 
        } catch (err: any) {
            console.error('Remove member error:', err);
-           setError('Failed to remove member. Please try again.');
-           toast({ title: 'Removal Failed', description: 'An error occurred.', variant: 'destructive' });
+            if (err.code === 'permission-denied') {
+                 setError('Permission denied. Check Firestore rules.');
+                 toast({ title: 'Removal Failed', description: 'Permission denied to update data.', variant: 'destructive' });
+            } else {
+                 setError('Failed to remove member. Please try again.');
+                 toast({ title: 'Removal Failed', description: 'An error occurred.', variant: 'destructive' });
+            }
        } finally {
            setIsRemoving(null); // Reset loading state
        }
@@ -319,7 +368,8 @@ function TeamPageContent() {
                           <li key={member.uid} className="flex items-center justify-between p-3 bg-card border rounded-md hover:bg-secondary/50 transition-colors">
                               <div className="flex items-center gap-3 overflow-hidden">
                                   <Avatar className="h-9 w-9 flex-shrink-0">
-                                      <AvatarImage src={member.avatarUrl || undefined} alt={member.displayName || member.email} data-ai-hint="avatar profile picture" />
+                                      {/* Use member's avatarUrl (which includes Gravatar fallback) */}
+                                      <AvatarImage src={member.avatarUrl} alt={member.displayName || member.email} data-ai-hint="avatar profile picture" />
                                       <AvatarFallback>{(member.displayName || member.email || '?').charAt(0).toUpperCase()}</AvatarFallback>
                                   </Avatar>
                                   <div className="overflow-hidden">
@@ -401,7 +451,7 @@ function TeamPageContent() {
              </form>
            </Card>
        )}
-        {/* General Error Display (for non-invite related errors) */}
+        {/* General Error Display (for non-invite related errors, like initial load failure) */}
        {error && <p className="text-sm text-destructive mt-4">{error}</p>}
     </div>
   );
