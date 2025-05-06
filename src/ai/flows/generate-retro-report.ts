@@ -68,13 +68,17 @@ const RetroReportPromptInputSchema = ai.defineSchema('RetroReportPromptInput', z
     currentDate: z.string().describe("The current date for the report header."),
 }));
 
-
-// Define output schema
+// Output schema for the *flow* (public interface)
 const GenerateRetroReportOutputSchema = ai.defineSchema('GenerateRetroReportOutput', z.object({
     reportSummaryHtml: z.string().describe("A concise HTML summary of the retrospective, suitable for an email. Include sections for Sentiment Analysis (average rating, key themes from justifications), What Went Well, What Could Be Improved, Discussion Points, Action Items, and the Next Scrum Master. Keep it well-formatted and readable."),
-    nextScrumMaster: UserSchema.nullable().optional().describe("The suggested next scrum master from the team members (excluding current scrum master, if provided). If no other members, can be null. This is the same user passed to the prompt."),
+    nextScrumMaster: UserSchema.nullable().optional().describe("The suggested next scrum master from the team members (excluding current scrum master, if provided). If no other members, can be null."),
 }));
 export type GenerateRetroReportOutput = z.infer<typeof GenerateRetroReportOutputSchema>;
+
+// Simplified output schema for the *prompt* - it only needs to generate the HTML.
+const PromptOutputSchema = ai.defineSchema('PromptOutput', z.object({
+    reportSummaryHtml: z.string().describe("A concise HTML summary of the retrospective, suitable for an email. Include sections for Sentiment Analysis (average rating, key themes from justifications), What Went Well, What Could Be Improved, Discussion Points, Action Items, and the Next Scrum Master (as provided in input). Keep it well-formatted and readable."),
+}));
 
 
 // Define the prompt
@@ -82,13 +86,13 @@ const retroReportPrompt = ai.definePrompt(
     {
         name: 'retroReportPrompt',
         input: { schema: RetroReportPromptInputSchema },
-        output: { schema: GenerateRetroReportOutputSchema }, // Output schema now only expects the report; SM is an input to prompt.
+        output: { schema: PromptOutputSchema }, // Use the simplified output schema for the prompt
         prompt: `
             You are tasked with generating a retrospective summary report for team "{{teamName}}" (ID: {{teamId}}).
             Date of Report: {{currentDate}}
 
             Current Scrum Master (if any): {{#if currentScrumMaster}}{{currentScrumMaster.name}} ({{currentScrumMaster.email}}){{else}}None{{/if}}
-            Next Scrum Master: {{#if nextScrumMaster}}{{nextScrumMaster.name}} ({{nextScrumMaster.email}}){{else}}To be determined or no change{{/if}}
+            Next Scrum Master (as determined and provided to you): {{#if nextScrumMaster}}{{nextScrumMaster.name}} ({{nextScrumMaster.email}}){{else}}To be determined or no change{{/if}}
 
             Sentiment Poll Responses:
             {{#if pollResponses.length}}
@@ -165,10 +169,10 @@ const retroReportPrompt = ai.definePrompt(
             - What Could Be Improved: List items.
             - Discussion Points: List items.
             - Action Items: List items.
-            - Next Scrum Master: State the name and email of the next Scrum Master as provided in the input.
+            - Next Scrum Master: State the name and email of the next Scrum Master as provided in YOUR input.
             Keep the HTML clean and readable. Use simple tags like <h1>, <h2>, <p>, <ul>, <li>. Do not include <style> tags or complex CSS.
 
-            Return the result ONLY as a JSON object matching the output schema. The 'nextScrumMaster' field in the output JSON should be the same User object (or null) that was provided in the input 'nextScrumMaster' field.
+            Return the result ONLY as a JSON object matching the output schema (which means only the 'reportSummaryHtml' field).
         `,
         templateFormat: 'handlebars',
         model: 'googleai/gemini-2.0-flash',
@@ -270,9 +274,7 @@ const generateRetroReportFlow = ai.defineFlow<
                 throw new Error("AI failed to generate the report.");
             }
             
-            // The prompt output schema's nextScrumMaster should match what we sent.
-            // The main purpose here is to get the reportSummaryHtml.
-            // We ensure the 'nextScrumMaster' in the final output of the flow is the one we determined.
+            // Combine the generated HTML report with the next Scrum Master determined by the flow logic.
             return {
                 reportSummaryHtml: output.reportSummaryHtml,
                 nextScrumMaster: determinedNextScrumMaster, // Return the SM determined by the flow
@@ -295,6 +297,7 @@ export async function generateRetroReport(input: GenerateRetroReportInput): Prom
     return generateRetroReportFlow(validatedInput);
 }
 
+// Type assertions to ensure Zod schemas align with external types at compile time
 type _AssertUser = ExternalUser extends z.infer<typeof UserSchema> ? true : false;
 type _AssertPollResponse = ExternalPollResponse extends z.infer<typeof PollResponseSchema> ? true : false;
 type _AssertRetroItem = ExternalRetroItem extends z.infer<typeof RetroItemSchema> ? true : false;
@@ -302,5 +305,3 @@ type _AssertRetroItem = ExternalRetroItem extends z.infer<typeof RetroItemSchema
 const _userAssertion: _AssertUser = true;
 const _pollResponseAssertion: _AssertPollResponse = true;
 const _retroItemAssertion: _AssertRetroItem = true;
-
-    
