@@ -3,68 +3,10 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Users Collection
-    // Allow users to read their own document
-    // Allow users to create their own document during signup
-    // Allow users to update their own document (e.g., to add/remove team IDs)
-    match /users/{userId} {
-      allow read, update: if request.auth != null && request.auth.uid == userId;
-      allow create: if request.auth != null && request.auth.uid == userId;
-      // Deny delete for now
-      allow delete: if false;
-    }
-
-    // Teams Collection
-    // Allow authenticated users to create a team (if they set themselves as owner/member)
-    match /teams/{teamId} {
-      allow create: if request.auth != null
-                     && request.resource.data.owner == request.auth.uid
-                     && request.resource.data.members[0] == request.auth.uid
-                     && request.resource.data.members.size() == 1;
-
-      // Allow members to read the team document
-      allow read: if request.auth != null && resource.data.members.hasAny([request.auth.uid]);
-
-      // Allow the owner to update the team (e.g., add/remove members)
-      // Ensure owner cannot be removed from members list and owner field cannot be changed easily
-      allow update: if request.auth != null
-                     && resource.data.owner == request.auth.uid // Only owner can update
-                     && request.resource.data.owner == resource.data.owner // Prevent changing owner field
-                     && request.resource.data.members.hasAny([resource.data.owner]); // Ensure owner remains a member after update
-
-      // Deny delete for now
-      allow delete: if false;
-    }
-
-    // --- Placeholder Rules for Retro/Poll Data (Requires specific data structure) ---
-    // Example assuming subcollections under teams:
-    // match /teams/{teamId}/retrospectives/{retroId}/items/{itemId} {
-    //   // Allow team members to read items
-    //   allow read: if request.auth != null && get(/databases/$(database)/documents/teams/$(teamId)).data.members.hasAny([request.auth.uid]);
-    //   // Allow team members to create items authored by themselves
-    //   allow create: if request.auth != null
-    //                  && get(/databases/$(database)/documents/teams/$(teamId)).data.members.hasAny([request.auth.uid])
-    //                  && request.resource.data.author.id == request.auth.uid;
-    //   // Allow authors to update/delete their own items
-    //   allow update, delete: if request.auth != null && resource.data.author.id == request.auth.uid;
-    // }
-    // match /teams/{teamId}/retrospectives/{retroId}/polls/{pollId} {
-    //   // Allow team members to read poll responses
-    //   allow read: if request.auth != null && get(/databases/$(database)/documents/teams/$(teamId)).data.members.hasAny([request.auth.uid]);
-    //   // Allow team members to create/update their own poll response
-    //   allow create, update: if request.auth != null
-    //                  && get(/databases/$(database)/documents/teams/$(teamId)).data.members.hasAny([request.auth.uid])
-    //                  && request.resource.data.author.id == request.auth.uid;
-    //   // Generally, don't allow deleting poll responses?
-    //   allow delete: if false;
-    // }
-    // --- End Placeholder Rules ---
-
-
-    // Fallback deny rule for any unspecified paths
-    match /{path=**} {
-       allow read, write: if false;
+    // WARNING: Allows anyone to read/write to any document.
+    // For development ONLY. Replace with secure rules for production.
+    match /{document=**} {
+      allow read, write: if true;
     }
   }
 }
