@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview Generates a retrospective report and suggests the next scrum master.
@@ -15,9 +16,9 @@ import { z } from 'genkit';
 const UserSchema = z.object({
     id: z.string(),
     name: z.string(),
-    email: z.string().email(),
-    avatarUrl: z.string().url(),
-    role: z.string(),
+    email: z.string().describe("The user's email address."), // Removed .email()
+    avatarUrl: z.string().describe("URL of the user's avatar."), // Removed .url()
+    role: z.string(), // AppRole is a string enum, z.string() is fine. For stricter validation use z.enum(Object.values(APP_ROLES) as [string, ...string[]]) if APP_ROLES is accessible here.
     teamIds: z.array(z.string()).optional(),
 });
 
@@ -64,7 +65,7 @@ const RetroReportPromptInputSchema = ai.defineSchema('RetroReportPromptInput', z
 }));
 
 
-// Define output schema (remains the same)
+// Define output schema (remains the same logical structure, but UserSchema is now simpler)
 const GenerateRetroReportOutputSchema = ai.defineSchema('GenerateRetroReportOutput', z.object({
     reportSummaryHtml: z.string().describe("A concise HTML summary of the retrospective, suitable for an email. Include sections for Sentiment Analysis (average rating, key themes from justifications), What Went Well, What Could Be Improved, Discussion Points, and Action Items. Keep it well-formatted and readable."),
     nextScrumMaster: UserSchema.nullable().optional().describe("The suggested next scrum master from the team members (excluding current scrum master, if provided). If no other members, can be null."),
@@ -167,13 +168,12 @@ const retroReportPrompt = ai.definePrompt(
                - If only the current Scrum Master is available, or no other members participated, they can be suggested again or return null if no one suitable.
                - If multiple members are eligible, you can pick one, perhaps randomly or based on some simple logic (e.g., someone who hasn't been SM recently, though that data isn't provided, so random is fine).
                - If no one participated or is eligible, return null for nextScrumMaster.
-               - The output for nextScrumMaster should be the full User object.
+               - The output for nextScrumMaster should be the full User object (id, name, email, avatarUrl, role, teamIds if available).
 
             Return the result ONLY as a JSON object matching the output schema.
         `,
         templateFormat: 'handlebars',
         model: 'googleai/gemini-2.0-flash',
-        // Removed helpers, as filtering is done in the flow
     }
 );
 
@@ -222,15 +222,21 @@ const generateRetroReportFlow = ai.defineFlow<
             // Ensure the output structure matches, especially the nextScrumMaster User object
             if (output.nextScrumMaster && typeof output.nextScrumMaster.id === 'undefined') {
                  console.warn("AI suggested nextScrumMaster without full User object details, attempting to find from input...");
-                 const allParticipants: ExternalUser[] = [
-                    ...input.pollResponses.map(p => p.author as ExternalUser),
-                    ...input.retroItems.map(i => i.author as ExternalUser)
-                 ];
-                 const foundUser = allParticipants.find(u => u.name === output.nextScrumMaster?.name || u.email === output.nextScrumMaster?.email);
-                 if(foundUser) output.nextScrumMaster = foundUser as z.infer<typeof UserSchema>;
-                 else {
-                    console.error("Could not fully resolve nextScrumMaster User object.");
-                    output.nextScrumMaster = null;
+                 // Attempt to find a full user object from the input data based on name or email
+                 const allParticipants: ExternalUser[] = [];
+                 input.pollResponses.forEach(p => { if (p.author) allParticipants.push(p.author as ExternalUser); });
+                 input.retroItems.forEach(i => { if (i.author) allParticipants.push(i.author as ExternalUser); });
+                 
+                 // Deduplicate participants to avoid multiple lookups of the same person
+                 const uniqueParticipants = Array.from(new Map(allParticipants.map(p => [p.id, p])).values());
+
+                 const foundUser = uniqueParticipants.find(u => u.name === output.nextScrumMaster?.name || u.email === output.nextScrumMaster?.email);
+
+                 if(foundUser) {
+                    output.nextScrumMaster = foundUser as z.infer<typeof UserSchema>; // Cast found user to Zod schema type
+                 } else {
+                    console.error("Could not fully resolve nextScrumMaster User object from input participants.");
+                    output.nextScrumMaster = null; // Set to null if user cannot be fully resolved
                  }
             }
 
@@ -249,8 +255,6 @@ const generateRetroReportFlow = ai.defineFlow<
  */
 export async function generateRetroReport(input: GenerateRetroReportInput): Promise<GenerateRetroReportOutput> {
     // Validate input using the Zod schema before calling the flow
-    // The input for this public function is already of type GenerateRetroReportInput (inferred)
-    // So, direct parsing is mostly for type safety and ensuring it's what the flow expects
     const validatedInput = GenerateRetroReportInputSchema.parse(input);
     return generateRetroReportFlow(validatedInput);
 }
@@ -261,7 +265,10 @@ type _AssertUser = ExternalUser extends z.infer<typeof UserSchema> ? true : fals
 type _AssertPollResponse = ExternalPollResponse extends z.infer<typeof PollResponseSchema> ? true : false;
 type _AssertRetroItem = ExternalRetroItem extends z.infer<typeof RetroItemSchema> ? true : false;
 
+// These assertions help catch type mismatches during development
+// If they cause a type error, the Zod schemas need to be updated to match the external types or vice-versa.
 const _userAssertion: _AssertUser = true;
 const _pollResponseAssertion: _AssertPollResponse = true;
 const _retroItemAssertion: _AssertRetroItem = true;
-// If these assertions cause a type error, the Zod schemas need to be updated to match the external types.
+
+```
