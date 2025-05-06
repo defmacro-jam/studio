@@ -3,6 +3,7 @@
 
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link'; // Import Link
 import { collection, addDoc, serverTimestamp, doc, updateDoc, arrayUnion, writeBatch } from 'firebase/firestore'; // Import writeBatch
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/AuthContext';
@@ -11,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Users } from 'lucide-react';
+import { Loader2, Users, X as CancelIcon } from 'lucide-react'; // Added CancelIcon
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { TEAM_ROLES } from '@/lib/types'; // Import roles
 
@@ -116,8 +117,23 @@ function CreateTeamPageContent() {
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
           </CardContent>
-          <CardFooter>
-            <Button type="submit" className="w-full" disabled={loading || !teamName.trim()}>
+          <CardFooter className="flex flex-col sm:flex-row gap-2"> {/* Adjust flex direction and add gap */}
+            {/* Cancel Button */}
+            <Button
+                type="button"
+                variant="outline"
+                onClick={() => router.push('/teams')} // Navigate to the teams list page
+                disabled={loading}
+                className="w-full sm:w-auto" // Adjust width for responsiveness
+            >
+                <CancelIcon className="mr-2 h-4 w-4" /> Cancel
+            </Button>
+             {/* Create Button */}
+            <Button
+                type="submit"
+                className="w-full sm:w-auto flex-grow" // Adjust width and allow growth
+                disabled={loading || !teamName.trim()}
+            >
               {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Users className="mr-2 h-4 w-4"/>}
               {loading ? 'Creating Team...' : 'Create Team'}
             </Button>
