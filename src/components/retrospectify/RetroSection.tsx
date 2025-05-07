@@ -79,32 +79,27 @@ export function RetroSection({
 
     try {
         const { id: droppedItemId, originalCategory } = JSON.parse(dataString);
-        const itemToMove = retroItems.find(i => i.id === droppedItemId); // Find the full item being moved from the *parent's* retroItems
 
-        if (!droppedItemId || !originalCategory || !itemToMove) {
-            console.warn("Drop failed: Missing item ID, original category, or item not found in current list.");
+        if (!droppedItemId || !originalCategory) {
+            console.warn("Drop failed: Missing item ID or original category from dataTransfer.");
             return;
         }
-
-        const isAdmin = currentUser.role === 'admin';
-        const isAuthor = itemToMove.author.id === currentUser.id;
-
-        if (!isAdmin && !isAuthor) {
-            console.warn("Drop prevented: User is not admin or author of the item.");
+        
+        // Prevent dropping onto the same category (can also be handled by parent)
+        if (originalCategory === category) { // `category` here is the target category of this section
+            console.log("Item dropped onto its own category. No action taken by RetroSection.");
             return;
         }
-
-        if (originalCategory === category) {
-            console.log("Item dropped onto its own category. No action taken.");
-            return;
-        }
-
-        // The actual move logic, including generating action items, is now fully in `handleMoveItem` in the parent.
-        // This component just signals the intent to move.
-        onMoveItem(droppedItemId, category);
+        
+        // Call the parent's move handler.
+        // The parent (page.tsx) will use `droppedItemId` to find the item
+        // from its global `retroItems` state, check permissions, and update Firestore.
+        onMoveItem(droppedItemId, category); // `category` is the targetCategory
 
     } catch (error) {
-        console.error("Failed to parse dropped data or execute move:", error);
+        // This catch block is for JSON.parse errors or if onMoveItem itself throws an unhandled error.
+        // The error in the prompt "ReferenceError: Can't find variable: retroItems" was due to incorrect variable access before this change.
+        console.error("Failed to parse dropped data or call onMoveItem in RetroSection:", error);
     }
   };
 
