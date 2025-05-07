@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, type DragEvent } from 'react';
@@ -49,7 +48,7 @@ function RetroSpectifyPageContent() {
   const [showTeamSelector, setShowTeamSelector] = useState(false);
 
   const { toast } = useToast();
-  console.log("[Page Lifecycle] RetroSpectifyPageContent rendering. Auth loading:", authLoading, "Current user:", currentUser ? currentUser.uid : 'none');
+  console.log("[Page Lifecycle] RetroSpectifyPageContent rendering. Auth loading:", authLoading, "Current user:", currentUser ? currentUser.uid : 'none', "Active Team ID:", activeTeamId);
 
 
   // Listen for demo mode changes
@@ -165,7 +164,6 @@ function RetroSpectifyPageContent() {
              } else {
                  setActiveTeamId(mockTeamId);
                  setActiveTeamName("Mock Demo Team");
-                 // For demo mode, if no real teams, we MIGHT load mock data here, but listeners handle it better if activeTeamId is mockTeamId
                  setShowTeamSelector(false);
              }
           }
@@ -185,7 +183,6 @@ function RetroSpectifyPageContent() {
            if (isDemoMode) {
                 setActiveTeamId(mockTeamId);
                 setActiveTeamName("Mock Demo Team");
-                // Again, listener for mockTeamId handles mock data loading.
            } else {
                 setActiveTeamId(null);
                 setActiveTeamName(null);
@@ -208,31 +205,7 @@ function RetroSpectifyPageContent() {
   // Subscribe to active team's retro items and poll responses
  useEffect(() => {
     console.log(`[Effect] Dependency change for listeners. isDemoMode: ${isDemoMode}, activeTeamId: ${activeTeamId}, appUser: ${appUser ? appUser.id : 'null'}`);
-    if (isDemoMode && activeTeamId === mockTeamId) {
-        console.log("[Effect] Demo mode active, using mock data. Clearing listeners if any.");
-        // In demo mode, we no longer set mock items here.
-        // If you want mock items, they should be added to Firestore under mockTeamId
-        // or handled purely in UI state *if* activeTeamId is mockTeamId and NO Firestore listeners are set up.
-        // For simplicity and to test persistence, it's often better to populate Firestore for demo.
-        // setRetroItems(mockInitialItems);
-        // setPollResponses(mockInitialPollResponses);
-        // if (appUser) {
-        //     const userResponseExists = mockInitialPollResponses.some(resp => resp.author.id === appUser.id);
-        //     setHasSubmitted(userResponseExists);
-        // } else {
-        //     setHasSubmitted(false);
-        // }
-        // If mockTeamId is a real Firestore ID, let listeners below handle it.
-        // If it's purely for UI mock data, then the Firestore listeners should NOT run.
-        // Assuming mockTeamId is NOT a real Firestore ID if demo mode is on, we would return.
-        // However, if mockTeamId IS a real Firestore path, we let the listeners run.
-        // Current setup assumes mockTeamId is for demo UI state only if we return here.
-        // Let's assume for now if isDemoMode AND activeTeamId is mockTeamId, we DO NOT set up listeners.
-        // This part needs careful consideration based on how demo mode data is managed.
-        // For this iteration, we'll let listeners try to run if activeTeamId is set, even in demo mode.
-        // A more robust demo mode would have its own Firestore data or completely separate logic.
-    }
-
+    
     if (!activeTeamId || !appUser) {
       console.log("[Effect] No active REAL team or appUser, clearing retro/poll data. Active Team ID:", activeTeamId, "App User:", appUser ? appUser.id : 'none');
       setRetroItems([]);
@@ -240,6 +213,19 @@ function RetroSpectifyPageContent() {
       setHasSubmitted(false);
       return; // Exit if no active team or user
     }
+
+    if (isDemoMode && activeTeamId === mockTeamId) {
+        console.log("[Effect] Demo mode active for mockTeamId. Listeners will not be set up for Firestore.");
+        setRetroItems([]); // Clear any existing items
+        setPollResponses([]); // Clear any existing responses
+        setHasSubmitted(false); // Reset submission state
+        // You might populate mock data here if desired, e.g.,
+        // setRetroItems(mockDemoRetroItems);
+        // setPollResponses(mockDemoPollResponses);
+        // setHasSubmitted(mockDemoPollResponses.some(r => r.author.id === appUser.id));
+        return; // Crucially, return to avoid setting up Firestore listeners for mockTeamId
+    }
+    
     console.log(`[Effect] Active team ID: ${activeTeamId}. Setting up listeners for retro items and poll responses.`);
 
     // Listener for Retro Items
@@ -251,10 +237,10 @@ function RetroSpectifyPageContent() {
             items.push({
                 id: doc.id,
                 ...data,
-                timestamp: (data.timestamp as FBTimestamp)?.toDate ? (data.timestamp as FBTimestamp).toDate() : new Date(data.timestamp || Date.now()), // Ensure timestamp is Date
+                timestamp: (data.timestamp as FBTimestamp)?.toDate ? (data.timestamp as FBTimestamp).toDate() : new Date(data.timestamp || Date.now()), 
                 replies: (data.replies || []).map((reply: any) => ({
                     ...reply,
-                    id: reply.id || Math.random().toString(36).substring(2,9), // Ensure reply has an ID for key prop
+                    id: reply.id || Math.random().toString(36).substring(2,9), 
                     timestamp: (reply.timestamp as FBTimestamp)?.toDate ? (reply.timestamp as FBTimestamp).toDate() : new Date(reply.timestamp || Date.now()),
                 }))
             } as RetroItem);
@@ -275,7 +261,7 @@ function RetroSpectifyPageContent() {
             responses.push({
                 id: doc.id,
                 ...data,
-                 timestamp: (data.timestamp as FBTimestamp)?.toDate ? (data.timestamp as FBTimestamp).toDate() : new Date(data.timestamp || Date.now()) // Ensure timestamp is Date
+                 timestamp: (data.timestamp as FBTimestamp)?.toDate ? (data.timestamp as FBTimestamp).toDate() : new Date(data.timestamp || Date.now()) 
             } as PollResponse);
         });
         console.log(`[Effect] Poll responses updated for team ${activeTeamId}:`, responses.length, "responses");
@@ -293,7 +279,7 @@ function RetroSpectifyPageContent() {
         unsubscribeRetroItems();
         unsubscribePollResponses();
     };
-}, [activeTeamId, appUser, toast, isDemoMode]); // Added isDemoMode to dependencies
+}, [activeTeamId, appUser, toast, isDemoMode]);
 
 
   // Recalculate hasSubmitted if pollResponses change
@@ -330,7 +316,10 @@ function RetroSpectifyPageContent() {
 
   // Function to remove existing AI-generated items for a specific poll response
   const removeExistingPollItems = useCallback(async (responseId: string) => {
-       if (!activeTeamId || (isDemoMode && activeTeamId === mockTeamId)) return; // Don't modify Firestore in demo mode
+       if (!activeTeamId || (isDemoMode && activeTeamId === mockTeamId)) {
+           if (isDemoMode) toast({ title: "Demo Mode", description: "Skipping cleanup of previous items."});
+           return;
+        }
        console.log(`[Callback] removeExistingPollItems for responseId ${responseId} in team ${activeTeamId}`);
       try {
         const itemsToRemoveQuery = query(
@@ -356,8 +345,7 @@ function RetroSpectifyPageContent() {
       }
       if (isDemoMode && activeTeamId === mockTeamId) {
           console.log("[Callback] Demo mode: Skipping Firestore for processJustification.");
-          // If demo mode means pure UI state, you'd manipulate local `retroItems` here.
-          // But for persistence test, this path should ideally not be hit if demo mode uses Firestore.
+          toast({ title: "Demo Mode", description: "Feedback processing simulated."});
           return;
       }
 
@@ -376,7 +364,7 @@ function RetroSpectifyPageContent() {
                  timestamp: serverTimestamp(),
                  category: category,
                  isFromPoll: true,
-                 teamId: activeTeamId,
+                 teamId: activeTeamId, // Store teamId in the item
              });
               console.log(`[Callback] Added rating-only item to Firestore with ID: ${newItemRef.id}`);
              toast({
@@ -408,7 +396,7 @@ function RetroSpectifyPageContent() {
                     timestamp: serverTimestamp(),
                     category: categorizedSentence.category,
                     isFromPoll: true,
-                    teamId: activeTeamId,
+                    teamId: activeTeamId, // Store teamId
                 });
             });
             await batch.commit();
@@ -433,7 +421,7 @@ function RetroSpectifyPageContent() {
                timestamp: serverTimestamp(),
                category: 'discuss',
                isFromPoll: true,
-               teamId: activeTeamId,
+               teamId: activeTeamId, // Store teamId
              });
              console.log(`[Callback] Added full justification as 'discuss' item to Firestore with ID: ${newItemRef.id}`);
              toast({ title: isEditingPoll ? "Feedback Updated" : "Feedback Added", description: "Your feedback couldn't be auto-categorized by sentence, added to 'Discussion Topics'." });
@@ -448,11 +436,11 @@ function RetroSpectifyPageContent() {
                timestamp: serverTimestamp(),
                category: 'discuss',
                isFromPoll: true,
-               teamId: activeTeamId,
+               teamId: activeTeamId, // Store teamId
            });
            console.log(`[Callback] Added fallback 'discuss' item to Firestore due to AI error. ID: ${newItemRef.id}`);
       }
-  }, [appUser, activeTeamId, removeExistingPollItems, toast, isEditingPoll, isDemoMode, currentUserResponse]); // Removed retroItems dependency
+  }, [appUser, activeTeamId, removeExistingPollItems, toast, isEditingPoll, isDemoMode, currentUserResponse]);
 
 
   const handlePollSubmit = useCallback(async (rating: number, justification: string) => {
@@ -464,21 +452,22 @@ function RetroSpectifyPageContent() {
 
       if (isDemoMode && activeTeamId === mockTeamId) {
           console.log("[Callback] Demo mode: Simulating poll submit.");
-          // No Firestore interaction in pure UI demo mode
-          // Logic to update local state (pollResponses, retroItems) would go here if needed for demo.
-          // For now, assuming demo mode might use a "real" mockTeamId in Firestore.
+          toast({ title: "Demo Mode", description: "Poll submission simulated."});
+          setHasSubmitted(true); // Simulate submission
+          setIsEditingPoll(false);
           return;
       }
 
     let responseId: string;
 
-    if (isEditingPoll && currentUserResponse) { // Check currentUserResponse for existing ID
+    if (isEditingPoll && currentUserResponse) { 
         responseId = currentUserResponse.id;
         const responseDocRef = doc(db, `teams/${activeTeamId}/pollResponses`, responseId);
         await updateDoc(responseDocRef, {
             rating,
             justification,
             timestamp: serverTimestamp(),
+            // teamId is already set on creation
         });
         console.log(`[Callback] Updated poll response ${responseId} in Firestore.`);
         toast({ title: "Poll Response Updated", description: "Your sentiment feedback has been updated." });
@@ -488,16 +477,16 @@ function RetroSpectifyPageContent() {
             rating,
             justification,
             timestamp: serverTimestamp(),
-            teamId: activeTeamId,
+            teamId: activeTeamId, // Store teamId
         });
         responseId = newResponseRef.id;
         console.log(`[Callback] Added new poll response ${responseId} to Firestore.`);
         toast({ title: "Poll Response Submitted", description: "Thank you for your feedback!" });
     }
-    setHasSubmitted(true); // This will be updated by the listener, but good to set optimistically
+    setHasSubmitted(true); 
     processJustification(rating, justification, responseId);
     setIsEditingPoll(false);
-  }, [appUser, activeTeamId, isEditingPoll, processJustification, toast, isDemoMode, currentUserResponse]); // Removed pollResponses dependency
+  }, [appUser, activeTeamId, isEditingPoll, processJustification, toast, isDemoMode, currentUserResponse]); 
 
   const handleEditPoll = useCallback(() => {
     console.log("[Callback] handleEditPoll triggered.");
@@ -518,7 +507,7 @@ function RetroSpectifyPageContent() {
      }
      if (isDemoMode && activeTeamId === mockTeamId) {
          console.log(`[Callback] Demo mode: Simulating add item to ${category}.`);
-         // No Firestore interaction
+         toast({ title: "Demo Mode", description: `Item addition to ${category} simulated.`});
          return;
      }
 
@@ -529,7 +518,7 @@ function RetroSpectifyPageContent() {
       timestamp: serverTimestamp(),
       category,
       isFromPoll: false,
-      teamId: activeTeamId,
+      teamId: activeTeamId, // Store teamId
     });
     console.log(`[Callback] Added new retro item ${newItemRef.id} to Firestore.`);
      toast({
@@ -545,7 +534,7 @@ function RetroSpectifyPageContent() {
     }
     if (isDemoMode && activeTeamId === mockTeamId) {
         console.log(`[Callback] Demo mode: Simulating edit item ${itemId}.`);
-        // No Firestore interaction
+        toast({ title: "Demo Mode", description: `Item edit simulated for ${itemId}.`});
         return;
     }
 
@@ -566,7 +555,7 @@ function RetroSpectifyPageContent() {
     }
     await updateDoc(itemRef, {
         content: newContent,
-        timestamp: serverTimestamp(), // Update timestamp on edit
+        timestamp: serverTimestamp(), 
     });
     console.log(`[Callback] Updated retro item ${itemId} in Firestore.`);
     toast({ title: "Item Updated", description: "Changes saved." });
@@ -579,11 +568,10 @@ function RetroSpectifyPageContent() {
       }
       if (isDemoMode && activeTeamId === mockTeamId) {
           console.log(`[Callback] Demo mode: Simulating generate action item from ${discussionItemId}.`);
-          // No Firestore interaction
+          toast({ title: "Demo Mode", description: `Action item generation simulated for ${discussionItemId}.`});
           return;
       }
       console.log(`[Callback] handleGenerateActionItem for discussion item ${discussionItemId} in team ${activeTeamId}`);
-      // Find item from Firestore-synced retroItems state
       const discussionItem = retroItems.find(item => item.id === discussionItemId);
       if (!discussionItem || discussionItem.category !== 'discuss') {
           toast({ title: "Error", description: "Could not find the discussion topic or it's not a discussion item.", variant: "destructive" });
@@ -603,7 +591,7 @@ function RetroSpectifyPageContent() {
               timestamp: serverTimestamp(),
               category: 'action',
               isFromPoll: false,
-              teamId: activeTeamId,
+              teamId: activeTeamId, // Store teamId
           });
           console.log(`[Callback] Generated action item ${newActionItemRef.id} in Firestore.`);
           toast({ title: "Action Item Created", description: `Generated action item: "${generatedContent}"` });
@@ -611,7 +599,7 @@ function RetroSpectifyPageContent() {
           console.error("[Callback] Error generating action item with AI:", error);
           toast({ title: "Action Item Generation Failed", description: "Could not generate an action item.", variant: "destructive" });
       }
-  }, [retroItems, appUser, activeTeamId, toast, isDemoMode]); // Depend on Firestore-synced retroItems
+  }, [retroItems, appUser, activeTeamId, toast, isDemoMode]); 
 
 
   const handleAddReply = useCallback(async (itemId: string, replyContent: string) => {
@@ -621,7 +609,7 @@ function RetroSpectifyPageContent() {
      }
      if (isDemoMode && activeTeamId === mockTeamId) {
          console.log(`[Callback] Demo mode: Simulating add reply to ${itemId}.`);
-         // No Firestore interaction
+         toast({ title: "Demo Mode", description: `Reply simulation for item ${itemId}.`});
          return;
      }
      console.log(`[Callback] handleAddReply to item ${itemId} in team ${activeTeamId}. Reply: ${replyContent.substring(0,20)}...`);
@@ -632,18 +620,18 @@ function RetroSpectifyPageContent() {
         return;
     }
     const parentItemData = itemDoc.data();
-    const newReplyId = doc(collection(db, `teams/${activeTeamId}/retroItems`)).id; // This creates a new ID, but doesn't write a doc.
+    const newReplyId = doc(collection(db, `teams/${activeTeamId}/retroItems`)).id; 
 
-    const newReply: Omit<RetroItem, 'teamId' | 'id'> & { id: string; timestamp: any} = { // reply is not a full RetroItem, simpler structure
-      id: newReplyId, // Use a generated ID for key purposes
+    const newReply: Omit<RetroItem, 'teamId' | 'id'> & { id: string; timestamp: any} = { 
+      id: newReplyId, 
       author: { id: appUser.id, name: appUser.name, email: appUser.email, avatarUrl: appUser.avatarUrl, role: appUser.role },
       content: replyContent,
-      timestamp: serverTimestamp(), // Use serverTimestamp for consistency
-      isFromPoll: false, // Replies are not from polls
-      category: parentItemData.category, // Replies inherit category
+      timestamp: serverTimestamp(), 
+      isFromPoll: false, 
+      category: parentItemData.category, 
     };
     await updateDoc(itemRef, {
-        replies: [...(parentItemData.replies || []), newReply] // Append to existing replies array
+        replies: [...(parentItemData.replies || []), newReply] 
     });
     console.log(`[Callback] Added reply to item ${itemId} in Firestore.`);
     toast({ title: "Reply Added" });
@@ -656,7 +644,7 @@ function RetroSpectifyPageContent() {
      }
      if (isDemoMode && activeTeamId === mockTeamId) {
          console.log(`[Callback] Demo mode: Simulating delete item ${itemId}.`);
-         // No Firestore interaction
+         toast({ title: "Demo Mode", description: `Item deletion simulated for ${itemId}.`});
          return;
      }
      console.log(`[Callback] handleDeleteItem ${itemId} in team ${activeTeamId}`);
@@ -678,13 +666,12 @@ function RetroSpectifyPageContent() {
      }
      await deleteDoc(itemRef);
      console.log(`[Callback] Deleted retro item ${itemId} from Firestore.`);
-    toast({ title: "Item Deleted", variant: "default" }); // Changed to default variant
+    toast({ title: "Item Deleted", variant: "default" }); 
    }, [appUser, activeTeamId, isEditingPoll, toast, isDemoMode]);
 
 
    const handleDragStart = useCallback((itemId: string) => {
     console.log(`[Callback] handleDragStart for item ${itemId}`);
-    // Find item from Firestore-synced retroItems state
     const item = retroItems.find(i => i.id === itemId);
       if (item && (item.author.id === appUser?.id || appUser?.role === APP_ROLES.ADMIN)) {
          setDraggingItemId(itemId);
@@ -692,7 +679,7 @@ function RetroSpectifyPageContent() {
          setDraggingItemId(null);
          console.log("[Callback] Drag prevented: Not owner or admin.");
      }
-   }, [retroItems, appUser]); // Depend on Firestore-synced retroItems
+   }, [retroItems, appUser]); 
 
 
    const handleDragEnd = useCallback(() => {
@@ -707,12 +694,11 @@ function RetroSpectifyPageContent() {
         }
          if (isDemoMode && activeTeamId === mockTeamId) {
             console.log(`[Callback] Demo mode: Simulating move item ${itemId} to ${targetCategory}.`);
-             // No Firestore interaction
+            toast({ title: "Demo Mode", description: `Item move to ${targetCategory} simulated.`});
              setDraggingItemId(null);
              return;
         }
         console.log(`[Callback] handleMoveItem ${itemId} to category ${targetCategory} in team ${activeTeamId}`);
-        // Find item from Firestore-synced retroItems state
         const itemToMove = retroItems.find(item => item.id === itemId);
         if (!itemToMove) {
             toast({ title: "Move Error", description: "Item not found.", variant: "destructive" });
@@ -733,7 +719,7 @@ function RetroSpectifyPageContent() {
 
         if (targetCategory === 'action') {
             if (itemToMove.category === 'discuss') {
-                handleGenerateActionItem(itemId); // This will create a new item in Firestore
+                handleGenerateActionItem(itemId); 
             } else {
                  toast({ title: "Cannot Move to Action Items", description: "Action Items can only be generated from Discussion Topics or added manually.", variant: "destructive" });
             }
@@ -753,7 +739,6 @@ function RetroSpectifyPageContent() {
          const isWellToImprove = itemToMove.category === 'well' && targetCategory === 'improve';
          const isImproveToWell = itemToMove.category === 'improve' && targetCategory === 'well';
          const userIsAuthor = itemToMove.author.id === appUser.id;
-         // Find current user's response from Firestore-synced pollResponses state
          const userCurrentResponseFromState = pollResponses.find(resp => resp.author.id === appUser.id);
 
 
@@ -767,7 +752,7 @@ function RetroSpectifyPageContent() {
              }
          }
          setDraggingItemId(null);
-    }, [appUser, activeTeamId, retroItems, pollResponses, toast, handleGenerateActionItem, isDemoMode]); // Depend on Firestore-synced states
+    }, [appUser, activeTeamId, retroItems, pollResponses, toast, handleGenerateActionItem, isDemoMode]); 
 
 
     const handleAdjustRatingConfirm = useCallback(async (newRating: number) => {
@@ -779,7 +764,7 @@ function RetroSpectifyPageContent() {
         }
         if (isDemoMode && activeTeamId === mockTeamId) {
             console.log(`[Callback] Demo mode: Simulating adjust rating to ${newRating}.`);
-            // No Firestore interaction
+            toast({ title: "Demo Mode", description: "Rating adjustment simulated."});
             setIsAdjustRatingModalOpen(false);
             setRatingAdjustmentProps(null);
             return;
@@ -809,8 +794,8 @@ function RetroSpectifyPageContent() {
   const filterItems = (category: Category) => {
     const filtered = retroItems.filter(item => item.category === category)
                                .sort((a, b) => {
-                                 const tsA = a.timestamp instanceof FBTimestamp ? a.timestamp.toMillis() : new Date(a.timestamp).getTime();
-                                 const tsB = b.timestamp instanceof FBTimestamp ? b.timestamp.toMillis() : new Date(b.timestamp).getTime();
+                                 const tsA = a.timestamp instanceof Date ? a.timestamp.getTime() : (a.timestamp as FBTimestamp)?.toMillis() || 0;
+                                 const tsB = b.timestamp instanceof Date ? b.timestamp.getTime() : (b.timestamp as FBTimestamp)?.toMillis() || 0;
                                  return tsB - tsA;
                                });
     return filtered;
@@ -859,7 +844,7 @@ function RetroSpectifyPageContent() {
 
 
   if (isLoading || authLoading || !appUser) {
-    console.log("[Render] Showing loading screen. isLoading:", isLoading, "authLoading:", authLoading, "appUser:", appUser ? appUser.id : 'none');
+    console.log("[Render] Showing loading screen. isLoading:", isLoading, "authLoading:", authLoading, "appUser:", appUser ? appUser.id : 'none', "Active Team ID:", activeTeamId);
     return (
       <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
         <header className="mb-8 flex justify-between items-center">
@@ -879,7 +864,7 @@ function RetroSpectifyPageContent() {
   }
 
   if (showTeamSelector && !isDemoMode && userTeams.length > 0) {
-    console.log("[Render] Showing TeamSelector. User teams:", userTeams.length);
+    console.log("[Render] Showing TeamSelector. User teams:", userTeams.length, "Active Team ID:", activeTeamId);
     return (
         <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
              <header className="mb-8 flex justify-between items-center flex-wrap gap-4">
@@ -914,7 +899,7 @@ function RetroSpectifyPageContent() {
                             {team.name}
                         </Button>
                     ))}
-                     {userTeams.length === 0 && ( // This case should ideally not be hit if showTeamSelector is true based on userTeams.length > 0
+                     {userTeams.length === 0 && ( 
                         <p className="text-muted-foreground text-center py-4">You are not part of any teams yet. Contact an admin to be added.</p>
                     )}
                 </CardContent>
@@ -926,8 +911,8 @@ function RetroSpectifyPageContent() {
 
 
   const canInteractWithCurrentTeam = !!activeTeamId && (isDemoMode || (appUser.teamIds || []).includes(activeTeamId));
-  console.log(`[Render] Can interact with current team (${activeTeamId}):`, canInteractWithCurrentTeam);
-  console.log(`[Render] Current appUser teamIds:`, appUser.teamIds);
+  console.log(`[Render] Can interact with current team (${activeTeamId}):`, canInteractWithCurrentTeam, "isDemoMode:", isDemoMode);
+  console.log(`[Render] Current appUser teamIds:`, appUser.teamIds, "Active Team ID:", activeTeamId);
 
   return (
     <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
@@ -942,7 +927,6 @@ function RetroSpectifyPageContent() {
                          <PackageSearch className="mr-2 h-4 w-4" /> Change Team
                      </Button>
                  )}
-                  {/* Show "My Teams" if user has any teams OR is admin (admin can create teams) */}
                   {(userTeams.length > 0 || appUser.role === APP_ROLES.ADMIN) && !isDemoMode && (
                      <Link href="/teams" passHref>
                          <Button variant="outline" size="sm">
@@ -972,7 +956,7 @@ function RetroSpectifyPageContent() {
             </div>
         </header>
 
-        {isDemoMode && (
+        {isDemoMode && activeTeamId === mockTeamId && (
           <Card className="mb-6 bg-yellow-50 border-yellow-300">
             <CardHeader>
               <CardTitle className="text-yellow-700 flex items-center">
@@ -981,8 +965,8 @@ function RetroSpectifyPageContent() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-yellow-600">
-                You are currently in Demo Mode. Data shown is for demonstration purposes and may not reflect real team activity.
-                Features related to real-time data persistence are disabled.
+                You are currently in Demo Mode using a mock team. Data shown is for demonstration purposes and will not persist.
+                Real team functionalities are simulated.
               </p>
             </CardContent>
           </Card>
@@ -1033,7 +1017,7 @@ function RetroSpectifyPageContent() {
                             currentUserHasVoted={!!currentUserResponse}
                         />
                     )}
-                    {!shouldShowPollForm && !shouldShowResults && ( // Case when poll form is hidden (voted) but results also hidden (e.g. not enough votes yet)
+                    {!shouldShowPollForm && !shouldShowResults && ( 
                         <Card className="shadow-md border border-input bg-card text-center p-6">
                             <CardDescription>Submit your sentiment in the poll above to see the team results.</CardDescription>
                         </Card>
@@ -1132,3 +1116,4 @@ export default function RetroSpectifyPage() {
         </ProtectedRoute>
     );
 }
+
