@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link'; 
 import { signOut } from 'firebase/auth'; 
 import { Timestamp as FBTimestamp, doc, getDoc, onSnapshot, collection, query, where, addDoc, updateDoc, deleteDoc, serverTimestamp, writeBatch, getDocs as getFirestoreDocs, arrayUnion } from 'firebase/firestore'; 
-import type { RetroItem, PollResponse, User, Category, AppRole, GlobalConfig, Team } from '@/lib/types'; 
+import type { RetroItem, PollResponse, User, Category, AppRole, GlobalConfig, Team, PlainPollResponse, PlainRetroItem } from '@/lib/types'; 
 import { PollSection } from '@/components/retrospectify/PollSection';
 import { PollResultsSection } from '@/components/retrospectify/PollResultsSection';
 import { RetroSection } from '@/components/retrospectify/RetroSection';
@@ -693,11 +693,11 @@ function RetroSpectifyPageContent() {
     const parentItemData = itemDoc.data();
     const newReplyId = doc(collection(db, `teams/${activeTeamId}/retroItems`)).id; 
 
-    const newReplyObjectForArray = { 
+    const newReplyObjectForArray: RetroItem = { 
       id: newReplyId, 
       author: { id: appUser.id, name: appUser.name, email: appUser.email, avatarUrl: appUser.avatarUrl, role: appUser.role },
       content: replyContent,
-      timestamp: new Date(), 
+      timestamp: new Date().toISOString(), // Use ISO string for server actions; Firestore will convert to Timestamp
       isFromPoll: false, 
       category: parentItemData.category,
     };
@@ -741,7 +741,7 @@ function RetroSpectifyPageContent() {
 
 
     const updatedReplies = currentReplies.map((reply, index) =>
-        index === replyIndex ? { ...reply, content: newContent, timestamp: new Date() } : reply
+        index === replyIndex ? { ...reply, content: newContent, timestamp: new Date().toISOString() } : reply
     );
 
     await updateDoc(itemRef, { replies: updatedReplies });
@@ -989,6 +989,42 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
         localStorage.removeItem('activeTeamName');
     };
 
+    const convertTimestampToString = (timestamp: Date | FBTimestamp | string): string => {
+        if (timestamp instanceof Date) {
+            return timestamp.toISOString();
+        }
+        if (typeof timestamp === 'string') {
+            // Try to parse, if fails, return as is or throw error
+            try {
+                return new Date(timestamp).toISOString();
+            } catch {
+                return timestamp; // Or handle error appropriately
+            }
+        }
+        // Handle Firebase Timestamp
+        if (timestamp && typeof (timestamp as FBTimestamp).toDate === 'function') {
+            return (timestamp as FBTimestamp).toDate().toISOString();
+        }
+        // Fallback for unexpected types or null/undefined
+        return new Date().toISOString(); // Or throw an error, or return a specific string
+    };
+    
+    const convertRetroItemToPlain = (item: RetroItem): PlainRetroItem => {
+        return {
+            ...item,
+            timestamp: convertTimestampToString(item.timestamp),
+            replies: item.replies ? item.replies.map(convertRetroItemToPlain) : undefined,
+        };
+    };
+
+    const convertPollResponseToPlain = (response: PollResponse): PlainPollResponse => {
+        return {
+            ...response,
+            timestamp: convertTimestampToString(response.timestamp),
+        };
+    };
+
+
     const handleEndRetrospectiveOnHomePage = async () => {
         if (!activeTeamId || !teamDetails || !appUser || !selectedNextScrumMasterUid) return;
         if (!(appUser.role === APP_ROLES.ADMIN || teamDetails.scrumMasterUid === appUser.id || teamDetails.owner === appUser.id)) {
@@ -1008,18 +1044,20 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
 
             const retroItemsSnapshot = await getFirestoreDocs(retroItemsColRef);
             const retroItemsData: RetroItem[] = retroItemsSnapshot.docs.map(d => ({ id: d.id, ...d.data(), teamId: activeTeamId } as RetroItem));
+            
+            const plainPollResponsesData = pollResponsesData.map(convertPollResponseToPlain);
+            const plainRetroItemsData = retroItemsData.map(convertRetroItemToPlain);
+
 
             const reportInput: Parameters<typeof generateRetroReport>[0] = {
                 teamId: teamDetails.id,
                 teamName: teamDetails.name,
-                pollResponses: pollResponsesData,
-                retroItems: retroItemsData,
+                pollResponses: plainPollResponsesData,
+                retroItems: plainRetroItemsData,
                 currentScrumMaster: teamMembersForScrumMasterSelection.find(m => m.id === teamDetails.scrumMasterUid) || null,
-            };
-            const reportOutput = await generateRetroReport({
-                ...reportInput,
                 nextScrumMaster: teamMembersForScrumMasterSelection.find(m => m.id === selectedNextScrumMasterUid) || undefined,
-            });
+            };
+            const reportOutput = await generateRetroReport(reportInput);
 
             const memberEmails = teamMembersForScrumMasterSelection.map(member => member.email).filter(email => !!email);
             if (memberEmails.length > 0) {
@@ -1431,6 +1469,7 @@ export default function RetroSpectifyPage() {
         </ProtectedRoute>
     );
 }
+
 
 
 

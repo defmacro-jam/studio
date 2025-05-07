@@ -59,7 +59,7 @@ export interface Team {
     id: string; // ID is added after fetching
     name: string;
     owner: string; // UID of the owner (implicitly has owner role)
-    members: string[]; // Array of member UIDs
+    members: string[]; // Array of member UIDs. Will be deprecated in favor of memberRoles.
     memberRoles: { [uid: string]: TeamRole }; // Map UID to team-specific role (Owner, Manager, Member)
     scrumMasterUid?: string | null; // UID of the current scrum master (optional)
     pendingMemberEmails?: string[]; // Emails of users invited but not yet joined
@@ -86,13 +86,35 @@ export interface GlobalConfig {
   isDemoModeEnabled: boolean;
 }
 
+// Plain types for AI flow input, ensuring serializable timestamps
+export interface PlainPollResponse {
+  id: string;
+  author: User;
+  rating: number;
+  justification: string;
+  timestamp: string; // ISO 8601 date string
+  teamId?: string;
+}
+
+export interface PlainRetroItem {
+  id: string;
+  author: User;
+  content: string;
+  timestamp: string; // ISO 8601 date string
+  replies?: PlainRetroItem[]; // Recursive with plain timestamps
+  category: Category;
+  isFromPoll?: boolean;
+  pollResponseId?: string;
+  teamId?: string;
+}
+
 export interface GenerateRetroReportInput {
     teamId: string;
     teamName: string;
-    pollResponses: PollResponse[];
-    retroItems: RetroItem[];
-    currentScrumMaster?: User | null; // This User type is the generic one
-    nextScrumMaster?: User | null; // Added this to pass explicitly
+    pollResponses: PlainPollResponse[]; // Use PlainPollResponse
+    retroItems: PlainRetroItem[];       // Use PlainRetroItem
+    currentScrumMaster?: User | null;
+    nextScrumMaster?: User | null;
 }
 
 export interface GenerateRetroReportOutput {

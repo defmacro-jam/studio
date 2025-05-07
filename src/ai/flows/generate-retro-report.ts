@@ -1,4 +1,5 @@
 
+
 'use server';
 /**
  * @fileOverview Generates a retrospective report and suggests the next scrum master.
@@ -9,7 +10,8 @@
  */
 
 import { ai } from '@/ai/ai-instance';
-import type { PollResponse as ExternalPollResponse, RetroItem as ExternalRetroItem, User as ExternalUser } from '@/lib/types'; // Use original types for the public interface
+// Use PlainPollResponse and PlainRetroItem for the public interface's GenerateRetroReportInput
+import type { PlainPollResponse, PlainRetroItem, User as ExternalUser, GenerateRetroReportInput as ExternalGenerateRetroReportInput } from '@/lib/types';
 import { z } from 'genkit';
 
 // Define input schemas based on external types for the flow's public interface
@@ -24,34 +26,42 @@ const UserSchema = z.object({
 export type UserType = z.infer<typeof UserSchema>;
 
 
+// Internal Zod schema for PollResponse, expecting string timestamp
 const PollResponseSchema = z.object({
     id: z.string(),
     author: UserSchema,
     rating: z.number(),
     justification: z.string(),
-    timestamp: z.union([z.date(), z.object({})]), // Firestore Timestamps can be complex
+    timestamp: z.string().describe("ISO 8601 date string for the poll response."),
+    teamId: z.string().optional(),
 });
 
-const RetroItemSchema = z.object({
-    id: z.string(),
-    author: UserSchema,
-    content: z.string(),
-    timestamp: z.union([z.date(), z.object({})]),
-    replies: z.array(z.lazy(() => RetroItemSchema)).optional(),
-    category: z.enum(['well', 'improve', 'discuss', 'action']),
-    isFromPoll: z.boolean().optional(),
-    pollResponseId: z.string().optional(),
-});
+// Internal Zod schema for RetroItem, expecting string timestamp
+const RetroItemSchema: z.ZodType<PlainRetroItem> = z.lazy(() => // Use z.lazy for self-referencing types
+    z.object({
+        id: z.string(),
+        author: UserSchema,
+        content: z.string(),
+        timestamp: z.string().describe("ISO 8601 date string for the retro item."),
+        replies: z.array(RetroItemSchema).optional(), // Replies also use PlainRetroItem, so string timestamps
+        category: z.enum(['well', 'improve', 'discuss', 'action']),
+        isFromPoll: z.boolean().optional(),
+        pollResponseId: z.string().optional(),
+        teamId: z.string().optional(),
+    })
+);
 
-// This is the schema for the public generateRetroReport function and the flow's input
+
+// This is the Zod schema for the flow's input, aligning with ExternalGenerateRetroReportInput
 const GenerateRetroReportInputSchema = ai.defineSchema('GenerateRetroReportInput', z.object({
     teamId: z.string().describe("The ID of the team."),
     teamName: z.string().describe("The name of the team."),
-    pollResponses: z.array(PollResponseSchema).describe("An array of poll responses from the retrospective."),
-    retroItems: z.array(RetroItemSchema).describe("An array of all retro items (well, improve, discuss, action)."), // All items together
+    pollResponses: z.array(PollResponseSchema).describe("An array of poll responses from the retrospective, with string timestamps."),
+    retroItems: z.array(RetroItemSchema).describe("An array of all retro items (well, improve, discuss, action), with string timestamps."),
     currentScrumMaster: UserSchema.nullable().optional().describe("The current scrum master, if any."),
+    nextScrumMaster: UserSchema.nullable().optional().describe("The determined next scrum master for the team."), // This field is now part of the input to the flow
 }));
-export type GenerateRetroReportInput = z.infer<typeof GenerateRetroReportInputSchema>;
+// The public function `generateRetroReport` will expect `ExternalGenerateRetroReportInput` which uses PlainPollResponse/PlainRetroItem
 
 
 // Internal schema for the prompt, with pre-filtered items AND the determined next scrum master
@@ -60,7 +70,7 @@ const RetroReportPromptInputSchema = ai.defineSchema('RetroReportPromptInput', z
     teamName: z.string().describe("The name of the team."),
     pollResponses: z.array(PollResponseSchema).describe("An array of poll responses from the retrospective."),
     currentScrumMaster: UserSchema.nullable().optional().describe("The current scrum master, if any."),
-    nextScrumMaster: UserSchema.nullable().optional().describe("The determined next scrum master for the team."), // Added nextScrumMaster
+    nextScrumMaster: UserSchema.nullable().optional().describe("The determined next scrum master for the team."),
     wellItems: z.array(RetroItemSchema).describe("Items categorized as 'What Went Well'."),
     improveItems: z.array(RetroItemSchema).describe("Items categorized as 'What Could Be Improved'."),
     discussItems: z.array(RetroItemSchema).describe("Items categorized as 'Discussion Topics'."),
@@ -97,7 +107,7 @@ const retroReportPrompt = ai.definePrompt(
             Sentiment Poll Responses:
             {{#if pollResponses.length}}
                 {{#each pollResponses}}
-                - {{author.name}} ({{author.email}}): {{rating}} stars. Justification: "{{justification}}"
+                - {{author.name}} ({{author.email}}): {{rating}} stars. Justification: "{{justification}}" (Submitted: {{timestamp}})
                 {{/each}}
             {{else}}
                 No sentiment poll responses were submitted.
@@ -107,10 +117,10 @@ const retroReportPrompt = ai.definePrompt(
             What Went Well:
             {{#if wellItems.length}}
                 {{#each wellItems}}
-                    - "{{content}}" (by {{author.name}})
+                    - "{{content}}" (by {{author.name}}, Submitted: {{timestamp}})
                     {{#if replies.length}}
                         {{#each replies}}
-                        (Reply by {{author.name}}: "{{content}}")
+                        (Reply by {{author.name}}: "{{content}}", Submitted: {{timestamp}})
                         {{/each}}
                     {{/if}}
                 {{/each}}
@@ -121,10 +131,10 @@ const retroReportPrompt = ai.definePrompt(
             What Could Be Improved:
             {{#if improveItems.length}}
                 {{#each improveItems}}
-                    - "{{content}}" (by {{author.name}})
+                    - "{{content}}" (by {{author.name}}, Submitted: {{timestamp}})
                     {{#if replies.length}}
                         {{#each replies}}
-                        (Reply by {{author.name}}: "{{content}}")
+                        (Reply by {{author.name}}: "{{content}}", Submitted: {{timestamp}})
                         {{/each}}
                     {{/if}}
                 {{/each}}
@@ -135,10 +145,10 @@ const retroReportPrompt = ai.definePrompt(
             Discussion Topics:
             {{#if discussItems.length}}
                 {{#each discussItems}}
-                    - "{{content}}" (by {{author.name}})
+                    - "{{content}}" (by {{author.name}}, Submitted: {{timestamp}})
                     {{#if replies.length}}
                         {{#each replies}}
-                        (Reply by {{author.name}}: "{{content}}")
+                        (Reply by {{author.name}}: "{{content}}", Submitted: {{timestamp}})
                         {{/each}}
                     {{/if}}
                 {{/each}}
@@ -149,10 +159,10 @@ const retroReportPrompt = ai.definePrompt(
             Action Items:
             {{#if actionItems.length}}
                 {{#each actionItems}}
-                    - "{{content}}" (by {{author.name}})
+                    - "{{content}}" (by {{author.name}}, Submitted: {{timestamp}})
                     {{#if replies.length}}
                         {{#each replies}}
-                        (Reply by {{author.name}}: "{{content}}")
+                        (Reply by {{author.name}}: "{{content}}", Submitted: {{timestamp}})
                         {{/each}}
                     {{/if}}
                 {{/each}}
@@ -182,12 +192,12 @@ const retroReportPrompt = ai.definePrompt(
 
 // Define the flow
 const generateRetroReportFlow = ai.defineFlow<
-    typeof GenerateRetroReportInputSchema,
-    typeof GenerateRetroReportOutputSchema
+    z.infer<typeof GenerateRetroReportInputSchema>, // The flow receives data validated against this Zod schema
+    GenerateRetroReportOutput // The flow returns this type
 >(
     {
         name: 'generateRetroReportFlow',
-        inputSchema: GenerateRetroReportInputSchema,
+        inputSchema: GenerateRetroReportInputSchema, // Use the Zod schema for flow input
         outputSchema: GenerateRetroReportOutputSchema,
     },
     async (input) => {
@@ -195,71 +205,21 @@ const generateRetroReportFlow = ai.defineFlow<
             throw new Error("Team name and ID are required.");
         }
 
-        // 1. Determine the next Scrum Master
-        let determinedNextScrumMaster: UserType | null = null;
-        const participants: UserType[] = [];
+        // The nextScrumMaster is now passed in the input to the flow.
+        const determinedNextScrumMaster = input.nextScrumMaster;
 
-        // Collect unique participants from poll responses
-        input.pollResponses.forEach(pr => {
-            if (!participants.find(p => p.id === pr.author.id)) {
-                participants.push(pr.author);
-            }
-        });
-
-        // Collect unique participants from retro items
-        input.retroItems.forEach(ri => {
-            if (!participants.find(p => p.id === ri.author.id)) {
-                participants.push(ri.author);
-            }
-            ri.replies?.forEach(reply => {
-                if (!participants.find(p => p.id === reply.author.id)) {
-                    participants.push(reply.author);
-                }
-            });
-        });
-
-        const eligibleScrumMasters = participants.filter(p => {
-            // Exclude current scrum master if other eligible members exist
-            if (input.currentScrumMaster && p.id === input.currentScrumMaster.id) {
-                // Only exclude if there's at least one other participant who isn't the current SM
-                return participants.some(otherP => otherP.id !== input.currentScrumMaster!.id);
-            }
-            return true; // Otherwise, everyone is eligible
-        });
-
-
-        if (eligibleScrumMasters.length > 0) {
-            // If current SM was excluded and there are others, pick from them
-            const candidates = input.currentScrumMaster && eligibleScrumMasters.some(p => p.id !== input.currentScrumMaster!.id)
-                ? eligibleScrumMasters.filter(p => p.id !== input.currentScrumMaster!.id)
-                : eligibleScrumMasters;
-
-            if (candidates.length > 0) {
-                determinedNextScrumMaster = candidates[Math.floor(Math.random() * candidates.length)];
-            } else if (input.currentScrumMaster && eligibleScrumMasters.length === 1 && eligibleScrumMasters[0].id === input.currentScrumMaster.id) {
-                 // Only current SM participated, so they can be next if no one else is eligible
-                determinedNextScrumMaster = input.currentScrumMaster;
-            }
-        } else if (participants.length === 1 && input.currentScrumMaster && participants[0].id === input.currentScrumMaster.id) {
-            // Only the current scrum master participated at all
-            determinedNextScrumMaster = input.currentScrumMaster;
-        }
-        // If no one participated or no eligible SM, determinedNextScrumMaster remains null.
-
-
-        // 2. Filter items by category
+        // Filter items by category
         const wellItems = input.retroItems.filter(item => item.category === 'well');
         const improveItems = input.retroItems.filter(item => item.category === 'improve');
         const discussItems = input.retroItems.filter(item => item.category === 'discuss');
         const actionItems = input.retroItems.filter(item => item.category === 'action');
 
-        // 3. Prepare the input for the prompt
         const promptInput: z.infer<typeof RetroReportPromptInputSchema> = {
             teamId: input.teamId,
             teamName: input.teamName,
             pollResponses: input.pollResponses,
             currentScrumMaster: input.currentScrumMaster,
-            nextScrumMaster: determinedNextScrumMaster, // Pass the determined SM
+            nextScrumMaster: determinedNextScrumMaster,
             wellItems,
             improveItems,
             discussItems,
@@ -274,10 +234,9 @@ const generateRetroReportFlow = ai.defineFlow<
                 throw new Error("AI failed to generate the report.");
             }
             
-            // Combine the generated HTML report with the next Scrum Master determined by the flow logic.
             return {
                 reportSummaryHtml: output.reportSummaryHtml,
-                nextScrumMaster: determinedNextScrumMaster, // Return the SM determined by the flow
+                nextScrumMaster: determinedNextScrumMaster,
             };
 
         } catch (error) {
@@ -289,19 +248,16 @@ const generateRetroReportFlow = ai.defineFlow<
 
 /**
  * Public function to invoke the retrospective report generation flow.
- * @param input - The retrospective data.
+ * @param input - The retrospective data, conforming to ExternalGenerateRetroReportInput.
  * @returns The generated report HTML and suggested next scrum master.
  */
-export async function generateRetroReport(input: GenerateRetroReportInput): Promise<GenerateRetroReportOutput> {
+export async function generateRetroReport(input: ExternalGenerateRetroReportInput): Promise<GenerateRetroReportOutput> {
+    // Validate input using the Zod schema before calling the flow
+    // The input here comes from the client and should already have plain timestamps
     const validatedInput = GenerateRetroReportInputSchema.parse(input);
     return generateRetroReportFlow(validatedInput);
 }
 
-// Type assertions to ensure Zod schemas align with external types at compile time
-type _AssertUser = ExternalUser extends z.infer<typeof UserSchema> ? true : false;
-type _AssertPollResponse = ExternalPollResponse extends z.infer<typeof PollResponseSchema> ? true : false;
-type _AssertRetroItem = ExternalRetroItem extends z.infer<typeof RetroItemSchema> ? true : false;
-
-const _userAssertion: _AssertUser = true;
-const _pollResponseAssertion: _AssertPollResponse = true;
-const _retroItemAssertion: _AssertRetroItem = true;
+// Type assertions are removed as the internal Zod schemas now correctly expect plain string timestamps,
+// and the responsibility of converting complex Timestamps to strings lies with the caller of generateRetroReport.
+// The public `generateRetroReport` function now expects `ExternalGenerateRetroReportInput` which uses `PlainPollResponse` and `PlainRetroItem`.
