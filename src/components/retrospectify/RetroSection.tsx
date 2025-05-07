@@ -21,8 +21,8 @@ interface RetroSectionProps {
   onMoveItem: (itemId: string, targetCategory: Category) => Promise<void>;
   onEditItem?: (itemId: string, newContent: string) => Promise<void>;
   onDeleteItem?: (itemId: string) => Promise<void>;
-  onEditReply?: (itemId: string, replyId: string, newContent: string) => Promise<void>; // New prop
-  onDeleteReply?: (itemId: string, replyId: string) => Promise<void>; // New prop
+  onEditReply?: (itemId: string, replyId: string, newContent: string) => Promise<void>; 
+  onDeleteReply?: (itemId: string, replyId: string) => Promise<void>; 
   allowAddingItems?: boolean;
   className?: string;
   draggingItemId?: string | null; 
@@ -41,8 +41,8 @@ export function RetroSection({
   onMoveItem,
   onEditItem,
   onDeleteItem,
-  onEditReply, // Destructure new prop
-  onDeleteReply, // Destructure new prop
+  onEditReply, 
+  onDeleteReply, 
   allowAddingItems = true,
   className,
   draggingItemId,

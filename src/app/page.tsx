@@ -161,6 +161,54 @@ function RetroSpectifyPageContent() {
             setActiveTeamId(null);
             setActiveTeamName(null);
             setShowTeamSelector(false);
+             // Attempt to create or join "Everybody" team if no teams exist
+            const everybodyTeamName = "Everybody";
+            const teamsRef = collection(db, 'teams');
+            const q = query(teamsRef, where("name", "==", everybodyTeamName));
+            const querySnapshot = await getFirestoreDocs(q);
+            let everybodyTeamId: string;
+
+            if (querySnapshot.empty) {
+                console.log("[Effect] 'Everybody' team does not exist, creating it.");
+                const newTeamDocRef = doc(teamsRef); // Generate new ID
+                everybodyTeamId = newTeamDocRef.id;
+                await writeBatch(db)
+                    .set(newTeamDocRef, {
+                        name: everybodyTeamName,
+                        createdAt: serverTimestamp(),
+                        createdBy: currentUser.uid,
+                        owner: currentUser.uid,
+                        members: [currentUser.uid],
+                        memberRoles: { [currentUser.uid]: TEAM_ROLES.OWNER },
+                        pendingMemberEmails: [],
+                        scrumMasterUid: null,
+                    })
+                    .update(userDocRef, { teamIds: arrayUnion(everybodyTeamId) })
+                    .commit();
+                console.log(`[Effect] 'Everybody' team created with ID: ${everybodyTeamId} and user added.`);
+                setActiveTeamId(everybodyTeamId);
+                setActiveTeamName(everybodyTeamName);
+                setUserTeams([{ id: everybodyTeamId, name: everybodyTeamName, owner: currentUser.uid, members:[currentUser.uid], memberRoles: { [currentUser.uid]: TEAM_ROLES.OWNER }, createdAt: FBTimestamp.now(), createdBy: currentUser.uid }]);
+            } else {
+                const everybodyTeamDoc = querySnapshot.docs[0];
+                everybodyTeamId = everybodyTeamDoc.id;
+                console.log(`[Effect] 'Everybody' team exists with ID: ${everybodyTeamId}.`);
+                const everybodyTeamData = everybodyTeamDoc.data() as Team;
+                if (!everybodyTeamData.members.includes(currentUser.uid)) {
+                    console.log(`[Effect] User not in 'Everybody' team, adding them.`);
+                    await writeBatch(db)
+                        .update(everybodyTeamDoc.ref, {
+                             members: arrayUnion(currentUser.uid),
+                             [`memberRoles.${currentUser.uid}`]: TEAM_ROLES.MEMBER // Default to member if joining existing
+                        })
+                        .update(userDocRef, { teamIds: arrayUnion(everybodyTeamId) })
+                        .commit();
+                     console.log(`[Effect] User added to 'Everybody' team.`);
+                }
+                setActiveTeamId(everybodyTeamId);
+                setActiveTeamName(everybodyTeamName);
+                setUserTeams([ { id: everybodyTeamId, ...everybodyTeamData} ]);
+            }
           }
         } else {
           console.warn("[Effect] User document not found in Firestore for UID:", currentUser.uid, ". This may cause issues.");
@@ -434,13 +482,16 @@ function RetroSpectifyPageContent() {
 
             const wellCount = categorizedSentences.filter(item => item.category === 'well').length;
             const improveCount = categorizedSentences.filter(item => item.category === 'improve').length;
+            const discussCount = categorizedSentences.filter(item => item.category === 'discuss').length;
+            
             let description = "Your feedback was processed.";
-            if (wellCount > 0 && improveCount > 0) {
-                description = `Added ${wellCount} item(s) to 'What Went Well' and ${improveCount} item(s) to 'What Could Be Improved'.`;
-            } else if (wellCount > 0) {
-                 description = `Added ${wellCount} item(s) to 'What Went Well'.`;
-            } else if (improveCount > 0) {
-                 description = `Added ${improveCount} item(s) to 'What Could Be Improved'.`;
+            const parts = [];
+            if (wellCount > 0) parts.push(`${wellCount} to 'Well'`);
+            if (improveCount > 0) parts.push(`${improveCount} to 'Improve'`);
+            if (discussCount > 0) parts.push(`${discussCount} to 'Discuss'`);
+
+            if (parts.length > 0) {
+                description = `Added ${parts.join(', ')}.`;
             }
              toast({ title: isEditingPoll ? "Feedback Updated" : "Feedback Categorized", description });
           } else if (justification.trim()) {
@@ -449,7 +500,7 @@ function RetroSpectifyPageContent() {
                author: { id: author.id, name: author.name, email: author.email, avatarUrl: author.avatarUrl, role: author.role },
                content: justification,
                timestamp: serverTimestamp(),
-               category: 'discuss',
+               category: 'discuss', // Default to discuss if AI returns nothing but there is justification
                isFromPoll: true,
                teamId: activeTeamId, 
              });
@@ -521,7 +572,7 @@ function RetroSpectifyPageContent() {
   }, [toast]);
 
 
-  const handleAddItem = useCallback(async (category: Category) => {
+  const handleAddItem = useCallback((category: Category) => {
     return async (content: string) => {
      if (!appUser || !activeTeamId) {
         console.warn("[Callback] handleAddItem: appUser or activeTeamId missing.");
@@ -787,7 +838,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
 
         if (targetCategory === 'action') {
             if (itemToMove.category === 'discuss') {
-                handleGenerateActionItem(itemId); 
+                await handleGenerateActionItem(itemId); 
             } else {
                  toast({ title: "Cannot Move to Action Items", description: "Action Items can only be generated from Discussion Topics or added manually.", variant: "destructive" });
             }
@@ -1098,7 +1149,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
                          <PackageSearch className="mr-2 h-4 w-4" /> Change Team
                      </Button>
                  )}
-                  {appUser.role === APP_ROLES.ADMIN || (userTeams.length > 0 )? (
+                  {(appUser.role === APP_ROLES.ADMIN || (userTeams.length > 0 && appUser.teamIds && appUser.teamIds.length > 0 )) ? (
                      <Link href="/teams" passHref>
                          <Button variant="outline" size="sm">
                              <Users className="mr-2 h-4 w-4" /> My Teams
@@ -1153,7 +1204,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
         )}
 
         {activeTeamId && teamDetails && (appUser.role === APP_ROLES.ADMIN || teamDetails.scrumMasterUid === appUser.id || teamDetails.owner === appUser.id) && (
-            <Accordion type="single" collapsible className="w-full mb-6">
+            <Accordion type="single" collapsible className="w-full mb-6" defaultValue=''>
                 <AccordionItem value="scrum-master-tools" className="border-b-0">
                     <Card className="shadow-md border-accent/30 bg-accent/5">
                          <CardHeader className="pb-2 pt-4 px-6">
