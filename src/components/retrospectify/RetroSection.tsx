@@ -79,31 +79,28 @@ export function RetroSection({
 
     try {
         const { id: droppedItemId, originalCategory } = JSON.parse(dataString);
-        const item = items.find(i => i.id === droppedItemId); // Get item details
-        const isAdmin = currentUser.role === 'admin';
-        const isAuthor = item?.author.id === currentUser.id;
+        const itemToMove = retroItems.find(i => i.id === droppedItemId); // Find the full item being moved from the *parent's* retroItems
 
-        if (!droppedItemId || !originalCategory) {
-            console.warn("Drop failed: Missing item ID or original category.");
+        if (!droppedItemId || !originalCategory || !itemToMove) {
+            console.warn("Drop failed: Missing item ID, original category, or item not found in current list.");
             return;
         }
 
-        // Allow drop if user is admin or is the author of the item
+        const isAdmin = currentUser.role === 'admin';
+        const isAuthor = itemToMove.author.id === currentUser.id;
+
         if (!isAdmin && !isAuthor) {
-            console.warn("Drop prevented: User is not admin or author.");
-             // Optionally show a toast
+            console.warn("Drop prevented: User is not admin or author of the item.");
             return;
         }
 
         if (originalCategory === category) {
-             return;
-        }
-
-        if (category === 'action' && originalCategory !== 'discuss') {
-            console.warn("Cannot move non-discussion items directly to Action Items.");
+            console.log("Item dropped onto its own category. No action taken.");
             return;
         }
 
+        // The actual move logic, including generating action items, is now fully in `handleMoveItem` in the parent.
+        // This component just signals the intent to move.
         onMoveItem(droppedItemId, category);
 
     } catch (error) {
@@ -169,3 +166,4 @@ export function RetroSection({
     </Card>
   );
 }
+

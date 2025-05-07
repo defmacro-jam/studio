@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo, useCallback, type DragEvent } from 'react
 import { useRouter } from 'next/navigation'; // Import useRouter
 import Link from 'next/link'; // Import Link
 import { signOut } from 'firebase/auth'; // Import signOut
-import { doc, getDoc, onSnapshot, collection, query, where, addDoc, updateDoc, deleteDoc, serverTimestamp, writeBatch, getDocs as getFirestoreDocs, Timestamp } from 'firebase/firestore'; // Renamed getDocs to getFirestoreDocs
+import { Timestamp as FBTimestamp, doc, getDoc, onSnapshot, collection, query, where, addDoc, updateDoc, deleteDoc, serverTimestamp, writeBatch, getDocs as getFirestoreDocs } from 'firebase/firestore'; // Renamed getDocs to getFirestoreDocs, added FBTimestamp
 import type { RetroItem, PollResponse, User, Category, AppRole, GlobalConfig, Team } from '@/lib/types'; // Added AppRole, GlobalConfig
 import { PollSection } from '@/components/retrospectify/PollSection';
 import { PollResultsSection } from '@/components/retrospectify/PollResultsSection';
@@ -26,7 +26,6 @@ import { useAuth } from '@/context/AuthContext'; // Import useAuth
 import { auth, db } from '@/lib/firebase'; // Import auth and db
 import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
 import { APP_ROLES, TEAM_ROLES } from '@/lib/types'; // Import APP_ROLES
-// Removed: import { TeamSelector } from '@/components/retrospectify/TeamSelector'; 
 
 
 // Mock initial data - replace with API/DB calls later
@@ -141,7 +140,7 @@ function RetroSpectifyPageContent() {
 
         if (userDocSnap.exists()) {
           const userData = userDocSnap.data();
-          const userTeamIds = userData.teamIds || userData.teams || []; // Compatibility
+          const userTeamIds = userData.teamIds || []; // Ensure teamIds is always an array
           console.log(`[Effect] User ${currentUser.uid} data from Firestore:`, userData, "User Team IDs:", userTeamIds);
 
           const resolvedUser: User = {
@@ -160,8 +159,7 @@ function RetroSpectifyPageContent() {
           const fetchedTeams: Team[] = [];
           if (resolvedUser.teamIds && resolvedUser.teamIds.length > 0) {
             console.log("[Effect] User has teamIds:", resolvedUser.teamIds);
-            // Fetch details for each team in chunks of 30 (Firestore 'in' query limit)
-             const teamChunks: string[][] = [];
+            const teamChunks: string[][] = [];
              for (let i = 0; i < resolvedUser.teamIds.length; i += 30) {
                  teamChunks.push(resolvedUser.teamIds.slice(i, i + 30));
              }
@@ -169,7 +167,7 @@ function RetroSpectifyPageContent() {
             for (const chunk of teamChunks) {
                 if (chunk.length > 0) {
                     const teamsQuery = query(collection(db, 'teams'), where('__name__', 'in', chunk));
-                    const teamsSnapshot = await getFirestoreDocs(teamsQuery); // Use renamed getFirestoreDocs
+                    const teamsSnapshot = await getFirestoreDocs(teamsQuery);
                     teamsSnapshot.forEach(teamDoc => {
                         fetchedTeams.push({ id: teamDoc.id, ...teamDoc.data() } as Team);
                     });
@@ -180,6 +178,8 @@ function RetroSpectifyPageContent() {
             console.log(`[Effect] User ${currentUser.uid} has no teamIds in their user document.`);
           }
           setUserTeams(fetchedTeams);
+          console.log(`[Effect] User teams state updated. Number of teams: ${fetchedTeams.length}`);
+
 
           if (fetchedTeams.length === 1) {
             console.log("[Effect] User has 1 team, setting as active:", fetchedTeams[0].id, fetchedTeams[0].name);
@@ -188,25 +188,31 @@ function RetroSpectifyPageContent() {
             setShowTeamSelector(false);
           } else if (fetchedTeams.length > 1) {
             console.log("[Effect] User has multiple teams, showing selector.");
-            setShowTeamSelector(true); // This will be true if TeamSelector component existed
-          } else {
+            const storedTeamId = localStorage.getItem('activeTeamId');
+            const storedTeamName = localStorage.getItem('activeTeamName');
+            if (storedTeamId && storedTeamName && fetchedTeams.some(t => t.id === storedTeamId)) {
+                setActiveTeamId(storedTeamId);
+                setActiveTeamName(storedTeamName);
+                setShowTeamSelector(false);
+            } else {
+                setShowTeamSelector(true);
+            }
+          } else { // No teams
             console.log("[Effect] User has no teams.");
-             // No teams, activeTeamId remains null, main page will show "no teams" message
-            setShowTeamSelector(false); // Ensure selector is not shown
-             if (!isDemoMode) { // If not in demo mode and no teams, set activeTeamId to null
+             if (!isDemoMode) {
                 setActiveTeamId(null);
                 setActiveTeamName(null);
+                setShowTeamSelector(false);
              } else {
-                 // In demo mode, if no real teams, use mock team
                  setActiveTeamId(mockTeamId);
                  setActiveTeamName("Mock Demo Team");
                  setRetroItems(mockInitialItems);
                  setPollResponses(mockInitialPollResponses);
+                 setShowTeamSelector(false);
              }
           }
         } else {
           console.warn("[Effect] User document not found in Firestore for UID:", currentUser.uid, ". This may cause issues.");
-          // Fallback for missing user doc:
           const fallbackEmail = currentUser.email || `${currentUser.uid}@example.com`;
           setAppUser({
             id: currentUser.uid,
@@ -217,8 +223,8 @@ function RetroSpectifyPageContent() {
             teamIds: [],
           });
           setUserTeams([]);
-          setShowTeamSelector(false); // No teams, no selector
-           if (isDemoMode) { // Fallback to demo data if user doc missing in demo mode
+          setShowTeamSelector(false);
+           if (isDemoMode) {
                 setActiveTeamId(mockTeamId);
                 setActiveTeamName("Mock Demo Team");
                 setRetroItems(mockInitialItems);
@@ -244,13 +250,16 @@ function RetroSpectifyPageContent() {
 
   // Subscribe to active team's retro items and poll responses
  useEffect(() => {
+    console.log(`[Effect] Dependency change for listeners. isDemoMode: ${isDemoMode}, activeTeamId: ${activeTeamId}, appUser: ${appUser ? appUser.id : 'null'}`);
     if (isDemoMode && activeTeamId === mockTeamId) {
         console.log("[Effect] Demo mode active, using mock data. Clearing listeners if any.");
         setRetroItems(mockInitialItems);
         setPollResponses(mockInitialPollResponses);
-        if (appUser) { // Check if appUser is available
+        if (appUser) {
             const userResponseExists = mockInitialPollResponses.some(resp => resp.author.id === appUser.id);
             setHasSubmitted(userResponseExists);
+        } else {
+            setHasSubmitted(false);
         }
         return; // Don't set up Firestore listeners in demo mode with mockTeamId
     }
@@ -273,11 +282,11 @@ function RetroSpectifyPageContent() {
             items.push({
                 id: doc.id,
                 ...data,
-                timestamp: (data.timestamp as Timestamp)?.toDate ? (data.timestamp as Timestamp).toDate() : new Date(data.timestamp), // Ensure timestamp is Date
+                timestamp: (data.timestamp as FBTimestamp)?.toDate ? (data.timestamp as FBTimestamp).toDate() : new Date(data.timestamp || Date.now()), // Ensure timestamp is Date
                 replies: (data.replies || []).map((reply: any) => ({
                     ...reply,
                     id: reply.id || Math.random().toString(36).substring(2,9), // Ensure reply has an ID for key prop
-                    timestamp: (reply.timestamp as Timestamp)?.toDate ? (reply.timestamp as Timestamp).toDate() : new Date(reply.timestamp),
+                    timestamp: (reply.timestamp as FBTimestamp)?.toDate ? (reply.timestamp as FBTimestamp).toDate() : new Date(reply.timestamp || Date.now()),
                 }))
             } as RetroItem);
         });
@@ -297,7 +306,7 @@ function RetroSpectifyPageContent() {
             responses.push({
                 id: doc.id,
                 ...data,
-                 timestamp: (data.timestamp as Timestamp)?.toDate ? (data.timestamp as Timestamp).toDate() : new Date(data.timestamp) // Ensure timestamp is Date
+                 timestamp: (data.timestamp as FBTimestamp)?.toDate ? (data.timestamp as FBTimestamp).toDate() : new Date(data.timestamp || Date.now()) // Ensure timestamp is Date
             } as PollResponse);
         });
         console.log(`[Effect] Poll responses updated for team ${activeTeamId}:`, responses.length, "responses");
@@ -354,13 +363,12 @@ function RetroSpectifyPageContent() {
   const removeExistingPollItems = useCallback(async (responseId: string) => {
        if (!activeTeamId || (isDemoMode && activeTeamId === mockTeamId)) return; // Don't modify Firestore in demo mode
        console.log(`[Callback] removeExistingPollItems for responseId ${responseId} in team ${activeTeamId}`);
-       // Remove from Firestore
       try {
         const itemsToRemoveQuery = query(
             collection(db, `teams/${activeTeamId}/retroItems`),
             where("pollResponseId", "==", responseId)
         );
-        const itemsSnapshot = await getFirestoreDocs(itemsToRemoveQuery); // Use renamed getFirestoreDocs
+        const itemsSnapshot = await getFirestoreDocs(itemsToRemoveQuery);
         const batch = writeBatch(db);
         itemsSnapshot.forEach(doc => batch.delete(doc.ref));
         await batch.commit();
@@ -384,19 +392,22 @@ function RetroSpectifyPageContent() {
            let newDemoItems: RetroItem[] = [];
 
            if (!justification.trim()) {
-                const category = rating >= 4 ? 'well' : rating <= 2 ? 'improve' : 'discuss';
-                newDemoItems.push({
-                    id: `demo-item-${Date.now()}`,
-                    pollResponseId: responseId,
-                    author: author,
-                    content: `Rated ${rating} stars.`,
-                    timestamp: new Date(),
-                    category: category,
-                    isFromPoll: true,
-                    teamId: mockTeamId
-                });
+                // Only add "Rated X stars" if it's NOT an edit OR if it's an edit and there was no justification before.
+                // If it's an edit and justification is cleared, we don't add this.
+                if (!isEditingPoll || (isEditingPoll && !currentUserResponse?.justification)) {
+                    const category = rating >= 4 ? 'well' : rating <= 2 ? 'improve' : 'discuss';
+                    newDemoItems.push({
+                        id: `demo-item-${Date.now()}`,
+                        pollResponseId: responseId,
+                        author: author,
+                        content: `Rated ${rating} stars.`,
+                        timestamp: new Date(),
+                        category: category,
+                        isFromPoll: true,
+                        teamId: mockTeamId
+                    });
+                }
            } else {
-                // Simulate AI categorization for demo
                 const sentences = justification.split('. ').filter(s => s.length > 0);
                 newDemoItems = sentences.map((sentence, index) => ({
                      id: `demo-item-${Date.now()}-${index}`,
@@ -404,11 +415,11 @@ function RetroSpectifyPageContent() {
                      author: author,
                      content: sentence,
                      timestamp: new Date(),
-                     category: (index % 2 === 0 && rating > 2) || rating >=4 ? 'well' : 'improve', // Simple demo logic
+                     category: (index % 2 === 0 && rating > 2) || rating >=4 ? 'well' : 'improve',
                      isFromPoll: true,
                      teamId: mockTeamId
                 }));
-                if (newDemoItems.length === 0) { // fallback if split fails
+                if (newDemoItems.length === 0 && justification.trim()) {
                     newDemoItems.push({
                         id: `demo-item-${Date.now()}-full`,
                         pollResponseId: responseId,
@@ -430,32 +441,32 @@ function RetroSpectifyPageContent() {
        const author = appUser;
 
       if (!justification.trim()) {
-          if (isEditingPoll && currentUserResponse?.justification) {
-             // If editing, had a justification before, and now it's empty,
-             // do NOT add a generic "Rated X stars" item. The intent is to clear justification.
-             console.log("[Callback] Justification cleared during edit. No new item added.");
-             toast({
-                title: "Justification Cleared",
-                description: "Your previous justification text has been removed.",
+           // Only add "Rated X stars" if it's NOT an edit where justification was cleared
+           // from a previously existing justification.
+           if (!isEditingPoll || (isEditingPoll && !currentUserResponse?.justification)) {
+             const category = rating >= 4 ? 'well' : rating <= 2 ? 'improve' : 'discuss';
+             const newItemContent = `Rated ${rating} stars.`;
+             const newItemRef = await addDoc(collection(db, `teams/${activeTeamId}/retroItems`), {
+                 pollResponseId: responseId,
+                 author: { id: author.id, name: author.name, email: author.email, avatarUrl: author.avatarUrl, role: author.role },
+                 content: newItemContent,
+                 timestamp: serverTimestamp(),
+                 category: category,
+                 isFromPoll: true,
+                 teamId: activeTeamId,
              });
-             return;
-          }
-          const category = rating >= 4 ? 'well' : rating <= 2 ? 'improve' : 'discuss';
-          const newItemContent = `Rated ${rating} stars.`;
-          const newItemRef = await addDoc(collection(db, `teams/${activeTeamId}/retroItems`), {
-              pollResponseId: responseId,
-              author: { id: author.id, name: author.name, email: author.email, avatarUrl: author.avatarUrl, role: author.role },
-              content: newItemContent,
-              timestamp: serverTimestamp(),
-              category: category,
-              isFromPoll: true,
-              teamId: activeTeamId,
-          });
-           console.log(`[Callback] Added rating-only item to Firestore with ID: ${newItemRef.id}`);
-          toast({
-              title: isEditingPoll ? "Feedback Updated" : "Feedback Added",
-              description: `Your rating was added to "${category === 'well' ? 'What Went Well' : category === 'improve' ? 'What Could Be Improved' : 'Discussion Topics'}".`,
-          });
+              console.log(`[Callback] Added rating-only item to Firestore with ID: ${newItemRef.id}`);
+             toast({
+                 title: isEditingPoll ? "Feedback Updated" : "Feedback Added",
+                 description: `Your rating was added to "${category === 'well' ? 'What Went Well' : category === 'improve' ? 'What Could Be Improved' : 'Discussion Topics'}".`,
+             });
+           } else {
+                console.log("[Callback] Justification cleared during edit. No new 'Rated X stars' item added.");
+                toast({
+                    title: "Justification Cleared",
+                    description: "Your previous justification text has been removed.",
+                });
+           }
           return;
       }
 
@@ -466,7 +477,7 @@ function RetroSpectifyPageContent() {
           if (categorizedSentences && categorizedSentences.length > 0) {
             const batch = writeBatch(db);
             categorizedSentences.forEach((categorizedSentence) => {
-                const newItemDocRef = doc(collection(db, `teams/${activeTeamId}/retroItems`)); // Auto-generate ID
+                const newItemDocRef = doc(collection(db, `teams/${activeTeamId}/retroItems`));
                 batch.set(newItemDocRef, {
                     pollResponseId: responseId,
                     author: { id: author.id, name: author.name, email: author.email, avatarUrl: author.avatarUrl, role: author.role },
@@ -491,13 +502,13 @@ function RetroSpectifyPageContent() {
                  description = `Added ${improveCount} item(s) to 'What Could Be Improved'.`;
             }
              toast({ title: isEditingPoll ? "Feedback Updated" : "Feedback Categorized", description });
-          } else if (justification.trim()) { // If AI returns nothing, but justification is not empty
+          } else if (justification.trim()) {
              const newItemRef = await addDoc(collection(db, `teams/${activeTeamId}/retroItems`), {
                pollResponseId: responseId,
                author: { id: author.id, name: author.name, email: author.email, avatarUrl: author.avatarUrl, role: author.role },
                content: justification,
                timestamp: serverTimestamp(),
-               category: 'discuss', // Fallback to 'discuss'
+               category: 'discuss',
                isFromPoll: true,
                teamId: activeTeamId,
              });
@@ -554,12 +565,10 @@ function RetroSpectifyPageContent() {
           return;
       }
 
-
-    const existingResponse = pollResponses.find(resp => resp.author.id === appUser.id);
     let responseId: string;
 
-    if (isEditingPoll && existingResponse) {
-        responseId = existingResponse.id;
+    if (isEditingPoll && currentUserResponse) { // Check currentUserResponse for existing ID
+        responseId = currentUserResponse.id;
         const responseDocRef = doc(db, `teams/${activeTeamId}/pollResponses`, responseId);
         await updateDoc(responseDocRef, {
             rating,
@@ -580,10 +589,10 @@ function RetroSpectifyPageContent() {
         console.log(`[Callback] Added new poll response ${responseId} to Firestore.`);
         toast({ title: "Poll Response Submitted", description: "Thank you for your feedback!" });
     }
-    setHasSubmitted(true); // Optimistically update, listener will confirm
+    setHasSubmitted(true);
     processJustification(rating, justification, responseId);
     setIsEditingPoll(false);
-  }, [appUser, activeTeamId, isEditingPoll, pollResponses, processJustification, toast, isDemoMode]);
+  }, [appUser, activeTeamId, isEditingPoll, pollResponses, processJustification, toast, isDemoMode, currentUserResponse]);
 
   const handleEditPoll = useCallback(() => {
     console.log("[Callback] handleEditPoll triggered.");
@@ -710,7 +719,6 @@ function RetroSpectifyPageContent() {
               category: 'action',
               isFromPoll: false,
               teamId: activeTeamId,
-              // linkedDiscussionId: discussionItem.id, // Optional
           });
           console.log(`[Callback] Generated action item ${newActionItemRef.id} in Firestore.`);
           toast({ title: "Action Item Created", description: `Generated action item: "${generatedContent}"` });
@@ -753,15 +761,15 @@ function RetroSpectifyPageContent() {
         return;
     }
     const parentItemData = itemDoc.data();
-    const newReplyId = doc(collection(db, `teams/${activeTeamId}/retroItems`)).id; // Generate an ID for the reply
+    const newReplyId = doc(collection(db, `teams/${activeTeamId}/retroItems`)).id;
 
-    const newReply: Omit<RetroItem, 'teamId'> & { id: string } = { // teamId will be part of the path
-      id: newReplyId, // Add the generated ID
+    const newReply: Omit<RetroItem, 'teamId' | 'id'> & { id: string; timestamp: any} = {
+      id: newReplyId,
       author: { id: appUser.id, name: appUser.name, email: appUser.email, avatarUrl: appUser.avatarUrl, role: appUser.role },
       content: replyContent,
       timestamp: serverTimestamp(),
       isFromPoll: false,
-      category: parentItemData.category, // Inherit category
+      category: parentItemData.category,
     };
     await updateDoc(itemRef, {
         replies: [...(parentItemData.replies || []), newReply]
@@ -844,35 +852,38 @@ function RetroSpectifyPageContent() {
              setDraggingItemId(null);
              return;
          }
-        if (itemToMove.category === targetCategory) {
+
+        if (itemToMove.category === targetCategory) { // This check might be redundant if RetroSection prevents this call
             setDraggingItemId(null);
             return;
         }
-        if (itemToMove.category === 'discuss' && targetCategory === 'action') {
-            handleGenerateActionItem(itemId);
+
+        if (targetCategory === 'action') {
+            if (itemToMove.category === 'discuss') {
+                handleGenerateActionItem(itemId); // This also handles toast messages
+            } else {
+                 toast({ title: "Cannot Move to Action Items", description: "Action Items can only be generated from Discussion Topics or added manually.", variant: "destructive" });
+            }
             setDraggingItemId(null);
             return;
         }
-         if (targetCategory === 'action' && itemToMove.category !== 'discuss') {
-             toast({ title: "Cannot Move to Action Items", description: "Action Items can only be generated from Discussion Topics or added manually.", variant: "destructive" });
-             setDraggingItemId(null);
-             return;
-         }
+
+
+         // Update item in Firestore
+        const itemRef = doc(db, `teams/${activeTeamId}/retroItems`, itemId);
+        await updateDoc(itemRef, {
+            category: targetCategory,
+            timestamp: serverTimestamp(),
+        });
+        console.log(`[Callback] Moved retro item ${itemId} to category ${targetCategory} in Firestore.`);
+
+         toast({ title: "Item Moved", description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".` });
 
          const isWellToImprove = itemToMove.category === 'well' && targetCategory === 'improve';
          const isImproveToWell = itemToMove.category === 'improve' && targetCategory === 'well';
          const userIsAuthor = itemToMove.author.id === appUser.id;
          const userCurrentResponse = pollResponses.find(resp => resp.author.id === appUser.id);
 
-         // Update item in Firestore
-        const itemRef = doc(db, `teams/${activeTeamId}/retroItems`, itemId);
-        await updateDoc(itemRef, {
-            category: targetCategory,
-            timestamp: serverTimestamp(), // Update timestamp on move
-        });
-        console.log(`[Callback] Moved retro item ${itemId} to category ${targetCategory} in Firestore.`);
-
-         toast({ title: "Item Moved", description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".` });
 
          if ((isWellToImprove || isImproveToWell) && userIsAuthor && userCurrentResponse) {
              const suggestedRating = isWellToImprove
@@ -917,8 +928,6 @@ function RetroSpectifyPageContent() {
          console.log("[Callback] handleAdjustRatingCancel.");
          if (ratingAdjustmentProps) {
              toast({ title: "Item Moved, Rating Unchanged", description: `Item moved, but sentiment rating kept at ${ratingAdjustmentProps.currentRating} stars.` });
-         } else {
-             toast({ title: "Item Moved, Rating Unchanged", description: `Item moved, sentiment rating kept at previous value.` });
          }
         setIsAdjustRatingModalOpen(false);
         setRatingAdjustmentProps(null);
@@ -928,11 +937,10 @@ function RetroSpectifyPageContent() {
   const filterItems = (category: Category) => {
     const filtered = retroItems.filter(item => item.category === category)
                                .sort((a, b) => {
-                                 const tsA = a.timestamp instanceof Timestamp ? a.timestamp.toMillis() : new Date(a.timestamp).getTime();
-                                 const tsB = b.timestamp instanceof Timestamp ? b.timestamp.toMillis() : new Date(b.timestamp).getTime();
+                                 const tsA = a.timestamp instanceof FBTimestamp ? a.timestamp.toMillis() : new Date(a.timestamp).getTime();
+                                 const tsB = b.timestamp instanceof FBTimestamp ? b.timestamp.toMillis() : new Date(b.timestamp).getTime();
                                  return tsB - tsA;
                                });
-    // console.log(`[Filter] Items for category ${category}:`, filtered.length);
     return filtered;
   };
 
@@ -941,10 +949,12 @@ function RetroSpectifyPageContent() {
         try {
             await signOut(auth);
             toast({ title: "Logged Out", description: "You have been successfully logged out." });
-            setActiveTeamId(null); // Clear active team on logout
+            setActiveTeamId(null);
             setActiveTeamName(null);
             setAppUser(null);
             setUserTeams([]);
+            localStorage.removeItem('activeTeamId');
+            localStorage.removeItem('activeTeamName');
             router.push('/login');
         } catch (error) {
             console.error("[Callback] Logout error:", error);
@@ -959,23 +969,24 @@ function RetroSpectifyPageContent() {
             setActiveTeamId(selectedTeam.id);
             setActiveTeamName(selectedTeam.name);
             setShowTeamSelector(false);
-             // Persist active team choice if needed (e.g., localStorage)
-            // localStorage.setItem('activeTeamId', selectedTeam.id);
-            // localStorage.setItem('activeTeamName', selectedTeam.name);
+            localStorage.setItem('activeTeamId', selectedTeam.id);
+            localStorage.setItem('activeTeamName', selectedTeam.name);
         }
     };
 
     const handleChangeTeam = () => {
         console.log("[Callback] handleChangeTeam triggered.");
         setShowTeamSelector(true);
-        setActiveTeamId(null); // Clear active team to force re-selection
+        setActiveTeamId(null);
         setActiveTeamName(null);
-        setRetroItems([]); // Clear items when changing team
-        setPollResponses([]); // Clear poll responses
+        setRetroItems([]);
+        setPollResponses([]);
+        localStorage.removeItem('activeTeamId');
+        localStorage.removeItem('activeTeamName');
     };
 
 
-  if (isLoading || authLoading || !appUser) { // Combined loading conditions
+  if (isLoading || authLoading || !appUser) {
     console.log("[Render] Showing loading screen. isLoading:", isLoading, "authLoading:", authLoading, "appUser:", appUser ? appUser.id : 'none');
     return (
       <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
@@ -995,12 +1006,8 @@ function RetroSpectifyPageContent() {
     );
   }
 
-  if (showTeamSelector && !isDemoMode) { // Only show real team selector if not in demo mode
+  if (showTeamSelector && !isDemoMode && userTeams.length > 0) {
     console.log("[Render] Showing TeamSelector. User teams:", userTeams.length);
-    // The TeamSelector component was removed, so this path needs to be handled differently.
-    // For now, if multiple teams exist, we might just show a message or default to the first one.
-    // Or, simply don't allow this state if TeamSelector is gone.
-    // Fallback to showing a message:
     return (
         <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
              <header className="mb-8 flex justify-between items-center flex-wrap gap-4">
@@ -1035,6 +1042,9 @@ function RetroSpectifyPageContent() {
                             {team.name}
                         </Button>
                     ))}
+                     {userTeams.length === 0 && (
+                        <p className="text-muted-foreground text-center py-4">You are not part of any teams yet. Contact an admin to be added.</p>
+                    )}
                 </CardContent>
             </Card>
             <Toaster />
@@ -1045,6 +1055,7 @@ function RetroSpectifyPageContent() {
 
   const canInteractWithCurrentTeam = !!activeTeamId && (isDemoMode || (appUser.teamIds || []).includes(activeTeamId));
   console.log(`[Render] Can interact with current team (${activeTeamId}):`, canInteractWithCurrentTeam);
+  console.log(`[Render] Current appUser teamIds:`, appUser.teamIds);
 
   return (
     <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
@@ -1054,19 +1065,19 @@ function RetroSpectifyPageContent() {
                 {activeTeamName && <span className="text-xl text-muted-foreground">({activeTeamName})</span>}
             </div>
             <div className="flex items-center space-x-3">
-                 {userTeams.length > 1 && activeTeamId && !isDemoMode && ( // Only show change team if multiple REAL teams and one is active
+                 {userTeams.length > 1 && activeTeamId && !isDemoMode && (
                      <Button variant="outline" size="sm" onClick={handleChangeTeam}>
                          <PackageSearch className="mr-2 h-4 w-4" /> Change Team
                      </Button>
                  )}
-                  {((appUser.role === APP_ROLES.ADMIN && !isDemoMode) || (userTeams && userTeams.length > 0 && !isDemoMode)) && ( // Only show if admin OR has teams, and NOT demo mode
+                  {(appUser.role === APP_ROLES.ADMIN || (userTeams && userTeams.length > 0)) && !isDemoMode && (
                      <Link href="/teams" passHref>
                          <Button variant="outline" size="sm">
                              <Users className="mr-2 h-4 w-4" /> My Teams
                          </Button>
                      </Link>
                  )}
-                 {appUser.role === APP_ROLES.ADMIN && !isDemoMode && ( // Only show admin if admin and NOT demo mode
+                 {appUser.role === APP_ROLES.ADMIN && !isDemoMode && (
                      <Link href="/admin" passHref>
                          <Button variant="outline" size="sm">
                              <ShieldCheck className="mr-2 h-4 w-4" /> Admin
@@ -1104,7 +1115,7 @@ function RetroSpectifyPageContent() {
           </Card>
         )}
 
-        {!activeTeamId && !isLoading && !isDemoMode && ( // Only show if not loading, no active REAL team, and not demo mode
+        {!activeTeamId && !isLoading && !isDemoMode && userTeams.length === 0 && (
              <Card className="mt-8 shadow-lg border-primary/20 bg-primary/5">
                 <CardHeader>
                   <CardTitle className="text-xl font-semibold text-primary flex items-center">
@@ -1112,22 +1123,14 @@ function RetroSpectifyPageContent() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                    {userTeams.length > 0 ? (
-                         <p className="text-muted-foreground">
-                           Please select a team to continue. Use the &quot;Change Team&quot; button if available, or one might be automatically selected.
-                         </p>
-                    ) : (
-                        <>
-                             <p className="text-muted-foreground">
-                               It looks like you&apos;re not part of any team yet.
-                             </p>
-                             <p className="text-muted-foreground mt-2">
-                               Please contact an administrator or a team owner to be added to a team.
-                               Once you&apos;re on a team, you&apos;ll be able to participate in retrospectives.
-                             </p>
-                        </>
-                    )}
-                  {appUser.role === APP_ROLES.ADMIN && userTeams.length === 0 && (
+                    <p className="text-muted-foreground">
+                       It looks like you&apos;re not part of any team yet.
+                    </p>
+                    <p className="text-muted-foreground mt-2">
+                       Please contact an administrator or a team owner to be added to a team.
+                       Once you&apos;re on a team, you&apos;ll be able to participate in retrospectives.
+                    </p>
+                  {appUser.role === APP_ROLES.ADMIN && (
                     <p className="text-muted-foreground mt-4">
                       As an administrator, you can <Link href="/teams/create" className="text-primary hover:underline">create a new team</Link> or manage existing teams and users.
                     </p>
@@ -1157,7 +1160,7 @@ function RetroSpectifyPageContent() {
                             currentUserHasVoted={!!currentUserResponse}
                         />
                     )}
-                    {!shouldShowPollForm && !currentUserResponse && ( // Shown if user hasn't voted yet (and not editing)
+                    {!shouldShowPollForm && !shouldShowResults && (
                         <Card className="shadow-md border border-input bg-card text-center p-6">
                             <CardDescription>Submit your sentiment in the poll above to see the team results.</CardDescription>
                         </Card>
@@ -1232,7 +1235,7 @@ function RetroSpectifyPageContent() {
                     />
                 </div>
             </>
-        ) : null}
+        ) : null }
 
 
        {ratingAdjustmentProps && isAdjustRatingModalOpen && (
@@ -1256,9 +1259,3 @@ export default function RetroSpectifyPage() {
         </ProtectedRoute>
     );
 }
-
-
-
-    
-
-
