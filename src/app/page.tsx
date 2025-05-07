@@ -6,8 +6,8 @@ import { useState, useEffect, useMemo, useCallback, type DragEvent } from 'react
 import { useRouter } from 'next/navigation'; // Import useRouter
 import Link from 'next/link'; // Import Link
 import { signOut } from 'firebase/auth'; // Import signOut
-import { doc, getDoc, onSnapshot } from 'firebase/firestore'; // Import Firestore functions
-import type { RetroItem, PollResponse, User, Category, AppRole, GlobalConfig } from '@/lib/types'; // Added AppRole, GlobalConfig
+import { doc, getDoc, onSnapshot, collection, query, where, addDoc, updateDoc, deleteDoc, serverTimestamp, writeBatch, getDocs as getFirestoreDocs, Timestamp } from 'firebase/firestore'; // Renamed getDocs to getFirestoreDocs
+import type { RetroItem, PollResponse, User, Category, AppRole, GlobalConfig, Team } from '@/lib/types'; // Added AppRole, GlobalConfig
 import { PollSection } from '@/components/retrospectify/PollSection';
 import { PollResultsSection } from '@/components/retrospectify/PollResultsSection';
 import { RetroSection } from '@/components/retrospectify/RetroSection';
@@ -20,12 +20,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardHeader, CardContent, CardFooter, CardDescription, CardTitle } from '@/components/ui/card'; // Added CardTitle
 import { Button } from '@/components/ui/button'; // Import Button
-import { Users, LogOut, ShieldCheck, Info, Settings } from 'lucide-react'; // Import Users, LogOut, ShieldCheck, Info, Settings icons
+import { Users, LogOut, ShieldCheck, Info, Settings, PackageSearch, Loader2 } from 'lucide-react'; // Import Users, LogOut, ShieldCheck, Info, Settings icons
 import ProtectedRoute from '@/components/auth/ProtectedRoute'; // Import ProtectedRoute
 import { useAuth } from '@/context/AuthContext'; // Import useAuth
 import { auth, db } from '@/lib/firebase'; // Import auth and db
 import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
-import { APP_ROLES } from '@/lib/types'; // Import APP_ROLES
+import { APP_ROLES, TEAM_ROLES } from '@/lib/types'; // Import APP_ROLES
+// Removed: import { TeamSelector } from '@/components/retrospectify/TeamSelector'; 
 
 
 // Mock initial data - replace with API/DB calls later
@@ -48,239 +49,439 @@ const mockUserBob = generateMockUser('user-456', 'Bob Smith', '1');
 const mockUserCharlie = generateMockUser('user-789', 'Charlie Brown', '2');
 const mockUserDana = generateMockUser('user-555', 'Dana Scully', '3');
 
+const mockTeamId = "mock-team-123"; // Define a mock team ID for demo data
+
 const mockInitialItems: RetroItem[] = [
-    { id: 'w1', author: mockUserBob, content: 'Great collaboration on the login feature!', timestamp: new Date(Date.now() - 3600000 * 2), category: 'well' },
-    { id: 'i1', author: mockUserCharlie, content: 'Deployment process was a bit slow this week.', timestamp: new Date(Date.now() - 3600000 * 3), category: 'improve' },
-    { id: 'd1', author: mockUserBob, content: 'Should we reconsider our testing strategy?', timestamp: new Date(Date.now() - 3600000 * 1), category: 'discuss' },
-    { id: 'a1', author: mockUserAlex, content: 'Alex to update documentation by EOD Friday.', timestamp: new Date(Date.now() - 3600000 * 0.5), category: 'action' },
+    { id: 'w1', author: mockUserBob, content: 'Great collaboration on the login feature!', timestamp: new Date(Date.now() - 3600000 * 2), category: 'well', teamId: mockTeamId },
+    { id: 'i1', author: mockUserCharlie, content: 'Deployment process was a bit slow this week.', timestamp: new Date(Date.now() - 3600000 * 3), category: 'improve', teamId: mockTeamId },
+    { id: 'd1', author: mockUserBob, content: 'Should we reconsider our testing strategy?', timestamp: new Date(Date.now() - 3600000 * 1), category: 'discuss', teamId: mockTeamId },
+    { id: 'a1', author: mockUserAlex, content: 'Alex to update documentation by EOD Friday.', timestamp: new Date(Date.now() - 3600000 * 0.5), category: 'action', teamId: mockTeamId },
     { id: 'w2', author: mockUserCharlie, content: 'Code reviews were very thorough.', timestamp: new Date(Date.now() - 3600000 * 5), category: 'well', replies: [
-        { id: 'r1', author: mockUserAlex, content: 'Agreed, learned a lot!', timestamp: new Date(Date.now() - 3600000 * 4), category: 'well' } // Reply needs category
-    ]},
-    { id: 'd2', author: mockUserAlex, content: 'Need clarity on the Q3 roadmap priorities.', timestamp: new Date(Date.now() - 3600000 * 1.5), category: 'discuss' },
-    { id: 'w3', author: mockUserAlex, content: 'Manual item: Test move well to improve', timestamp: new Date(Date.now() - 3600000 * 0.8), category: 'well' },
-    { id: 'i2', author: mockUserAlex, content: 'Manual item: Test move improve to well', timestamp: new Date(Date.now() - 3600000 * 0.7), category: 'improve' },
+        { id: 'r1', author: mockUserAlex, content: 'Agreed, learned a lot!', timestamp: new Date(Date.now() - 3600000 * 4), category: 'well', teamId: mockTeamId } // Reply needs category
+    ], teamId: mockTeamId},
+    { id: 'd2', author: mockUserAlex, content: 'Need clarity on the Q3 roadmap priorities.', timestamp: new Date(Date.now() - 3600000 * 1.5), category: 'discuss', teamId: mockTeamId },
+    { id: 'w3', author: mockUserAlex, content: 'Manual item: Test move well to improve', timestamp: new Date(Date.now() - 3600000 * 0.8), category: 'well', teamId: mockTeamId },
+    { id: 'i2', author: mockUserAlex, content: 'Manual item: Test move improve to well', timestamp: new Date(Date.now() - 3600000 * 0.7), category: 'improve', teamId: mockTeamId },
 ];
 
 const mockInitialPollResponses: PollResponse[] = [
-     { id: 'p1', author: mockUserBob, rating: 4, justification: 'Good progress overall, minor hiccup with API.', timestamp: new Date(Date.now() - 3600000 * 6) },
-     { id: 'p2', author: mockUserCharlie, rating: 5, justification: "Loved the free cookies!", timestamp: new Date(Date.now() - 3600000 * 7) },
-     { id: 'p3', author: mockUserDana, rating: 2, justification: "Project X team was overly needy on the help channel.", timestamp: new Date(Date.now() - 3600000 * 8) },
-     // Remove current user's mock response, will rely on actual auth
+     { id: 'p1', author: mockUserBob, rating: 4, justification: 'Good progress overall, minor hiccup with API.', timestamp: new Date(Date.now() - 3600000 * 6), teamId: mockTeamId },
+     { id: 'p2', author: mockUserCharlie, rating: 5, justification: "Loved the free cookies!", timestamp: new Date(Date.now() - 3600000 * 7), teamId: mockTeamId },
+     { id: 'p3', author: mockUserDana, rating: 2, justification: "Project X team was overly needy on the help channel.", timestamp: new Date(Date.now() - 3600000 * 8), teamId: mockTeamId },
 ];
 
 
 // Main component content refactored
 function RetroSpectifyPageContent() {
-  const { currentUser } = useAuth(); // Get user from AuthContext
+  const { currentUser, loading: authLoading } = useAuth(); // Get user from AuthContext
   const router = useRouter(); // Get router instance
-  const [retroItems, setRetroItems] = useState<RetroItem[]>([]); // Initialize empty, load from DB
-  const [pollResponses, setPollResponses] = useState<PollResponse[]>([]); // Initialize empty, load from DB
-  const [appUser, setAppUser] = useState<User | null>(null); // State for richer user data from Firestore
+  const [retroItems, setRetroItems] = useState<RetroItem[]>([]);
+  const [pollResponses, setPollResponses] = useState<PollResponse[]>([]);
+  const [appUser, setAppUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [isEditingPoll, setIsEditingPoll] = useState(false);
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [isAdjustRatingModalOpen, setIsAdjustRatingModalOpen] = useState(false);
   const [ratingAdjustmentProps, setRatingAdjustmentProps] = useState<{ itemIdToAdjust: string, currentRating: number; suggestedRating: number } | null>(null);
-  const [isDemoMode, setIsDemoMode] = useState(false); // State for demo mode
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
+  const [activeTeamName, setActiveTeamName] = useState<string | null>(null);
+  const [userTeams, setUserTeams] = useState<Team[]>([]);
+  const [showTeamSelector, setShowTeamSelector] = useState(false);
 
   const { toast } = useToast();
+  console.log("[Page Lifecycle] RetroSpectifyPageContent rendering. Auth loading:", authLoading, "Current user:", currentUser ? currentUser.uid : 'none');
+
 
   // Listen for demo mode changes
   useEffect(() => {
+    console.log("[Effect] Setting up demo mode listener.");
     const configDocRef = doc(db, 'config', 'global');
     const unsubscribe = onSnapshot(configDocRef, (docSnap) => {
       if (docSnap.exists()) {
         const configData = docSnap.data() as GlobalConfig;
+        console.log("[Effect] Demo mode config changed. Enabled:", configData.isDemoModeEnabled);
         setIsDemoMode(configData.isDemoModeEnabled);
       } else {
+        console.log("[Effect] Demo mode config not found, defaulting to false.");
         setIsDemoMode(false); // Default to false if doc doesn't exist
       }
     }, (error) => {
-      console.error("Error listening to demo mode config:", error);
+      console.error("[Effect] Error listening to demo mode config:", error);
       setIsDemoMode(false); // Fallback on error
     });
-
-    return () => unsubscribe(); // Cleanup listener
+    return () => {
+      console.log("[Effect Cleanup] Demo mode listener unsubscribing.");
+      unsubscribe();
+    }
   }, []);
 
 
-  // Fetch user data from Firestore and initial retro/poll data
+  // Fetch user data, teams, and set active team
   useEffect(() => {
-     const fetchData = async () => {
-       if (!currentUser) {
-         setIsLoading(false); // Stop loading if no user
-         return;
-       }
+    console.log("[Effect] Auth state or currentUser changed. Current user UID:", currentUser?.uid);
+    if (authLoading) {
+      console.log("[Effect] Auth is loading, returning early.");
+      setIsLoading(true);
+      return;
+    }
+    if (!currentUser) {
+      console.log("[Effect] No current user, redirecting to login.");
+      router.push('/login');
+      return;
+    }
 
-       setIsLoading(true);
-       try {
-           // Fetch Firestore user data
-           const userDocRef = doc(db, 'users', currentUser.uid);
-           const userDocSnap = await getDoc(userDocRef);
+    const fetchInitialUserData = async () => {
+      console.log("[Effect] Fetching initial user data for UID:", currentUser.uid);
+      setIsLoading(true);
+      try {
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        const userDocSnap = await getDoc(userDocRef);
 
-           let resolvedUser: User;
-           if (userDocSnap.exists()) {
-                const userData = userDocSnap.data();
-                 // Construct the User object
-                 resolvedUser = {
-                    id: currentUser.uid,
-                    name: currentUser.displayName || userData.displayName || currentUser.email?.split('@')[0] || 'User',
-                    email: currentUser.email || userData.email || 'unknown@example.com', // Ensure email exists
-                    // Use avatarUrl from Firestore first, then Auth, then generate Gravatar as fallback
-                    avatarUrl: userData.avatarUrl || currentUser.photoURL || getGravatarUrl(currentUser.email, 100)!,
-                    role: userData.role || APP_ROLES.MEMBER, // Include app-wide role, default to MEMBER
-                    teamIds: userData.teams || [], // Include teamIds
-                 };
-           } else {
-               // Handle case where user exists in Auth but not Firestore (create basic user object)
-               console.warn("User document not found in Firestore for UID:", currentUser.uid);
-               const fallbackEmail = currentUser.email || `${currentUser.uid}@example.com`; // Create a fallback email
-               resolvedUser = {
-                  id: currentUser.uid,
-                  name: currentUser.displayName || fallbackEmail.split('@')[0] || 'User',
-                  email: fallbackEmail,
-                  avatarUrl: currentUser.photoURL || getGravatarUrl(fallbackEmail, 100)!, // Use photoURL or generate Gravatar
-                  role: APP_ROLES.MEMBER, // Default app-wide role
-                  teamIds: [], // Default to empty teams
-               };
-           }
-           setAppUser(resolvedUser);
+        if (userDocSnap.exists()) {
+          const userData = userDocSnap.data();
+          const userTeamIds = userData.teamIds || userData.teams || []; // Compatibility
+          console.log(`[Effect] User ${currentUser.uid} data from Firestore:`, userData, "User Team IDs:", userTeamIds);
+
+          const resolvedUser: User = {
+            id: currentUser.uid,
+            name: userData.displayName || currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
+            email: userData.email || currentUser.email || 'unknown@example.com',
+            avatarUrl: userData.avatarUrl || currentUser.photoURL || getGravatarUrl(userData.email || currentUser.email, 100)!,
+            role: userData.role || APP_ROLES.MEMBER,
+            teamIds: userTeamIds,
+          };
+          setAppUser(resolvedUser);
+          console.log("[Effect] AppUser set:", resolvedUser);
 
 
-         // --- Replace Mock Data Fetching with Real DB Calls ---
-         // TODO: Fetch retroItems for the current team/user scope from Firestore
-         // TODO: Fetch pollResponses for the current team/user scope from Firestore
+          // Fetch user's teams
+          const fetchedTeams: Team[] = [];
+          if (resolvedUser.teamIds && resolvedUser.teamIds.length > 0) {
+            console.log("[Effect] User has teamIds:", resolvedUser.teamIds);
+            // Fetch details for each team in chunks of 30 (Firestore 'in' query limit)
+             const teamChunks: string[][] = [];
+             for (let i = 0; i < resolvedUser.teamIds.length; i += 30) {
+                 teamChunks.push(resolvedUser.teamIds.slice(i, i + 30));
+             }
 
-          // Inject the admin user into mock data if it doesn't exist (for testing)
-          let initialItems = isDemoMode ? mockInitialItems : [];
-          let initialPolls = isDemoMode ? mockInitialPollResponses : [];
-
-          if (isDemoMode && resolvedUser.role === APP_ROLES.ADMIN && !initialItems.some(item => item.author.id === resolvedUser.id)) {
-                // Add some items for the admin if they don't exist
-                initialItems = [
-                  ...initialItems,
-                  { id: 'admin-w1', author: resolvedUser, content: 'Admin: Things look good!', timestamp: new Date(), category: 'well' },
-                  { id: 'admin-d1', author: resolvedUser, content: 'Admin: Discuss project alpha status.', timestamp: new Date(), category: 'discuss' },
-                ];
-          }
-          if (isDemoMode && resolvedUser.role === APP_ROLES.ADMIN && !initialPolls.some(poll => poll.author.id === resolvedUser.id)) {
-             // Add a poll response for the admin if they don't exist
-             initialPolls = [
-                ...initialPolls,
-                { id: 'admin-p1', author: resolvedUser, rating: 4, justification: "Admin's perspective: Mostly positive.", timestamp: new Date() },
-             ];
-          }
-
-
-         setRetroItems(initialItems); // Using updated mock based on demo mode
-         setPollResponses(initialPolls); // Using updated mock based on demo mode
-
-         // Check if current user has submitted a poll response based on fetched data
-          const userResponseExists = initialPolls.some(resp => resp.author.id === currentUser.uid);
-         setHasSubmitted(userResponseExists);
-
-
-       } catch (error: any) {
-         console.error("Error fetching initial data:", error);
-          if (error.code === 'permission-denied') {
-              toast({ title: "Permission Denied", description: "You don't have permission to access this data. Check Firestore rules.", variant: "destructive", duration: 10000 });
+            for (const chunk of teamChunks) {
+                if (chunk.length > 0) {
+                    const teamsQuery = query(collection(db, 'teams'), where('__name__', 'in', chunk));
+                    const teamsSnapshot = await getFirestoreDocs(teamsQuery); // Use renamed getFirestoreDocs
+                    teamsSnapshot.forEach(teamDoc => {
+                        fetchedTeams.push({ id: teamDoc.id, ...teamDoc.data() } as Team);
+                    });
+                }
+            }
+            console.log("[Effect] Fetched teams:", fetchedTeams);
           } else {
-              toast({ title: "Error", description: "Could not load initial data.", variant: "destructive" });
+            console.log(`[Effect] User ${currentUser.uid} has no teamIds in their user document.`);
           }
-       } finally {
-         setIsLoading(false);
-       }
-     };
+          setUserTeams(fetchedTeams);
 
-     fetchData();
-  }, [currentUser, toast, isDemoMode]); // Depend on currentUser and isDemoMode
+          if (fetchedTeams.length === 1) {
+            console.log("[Effect] User has 1 team, setting as active:", fetchedTeams[0].id, fetchedTeams[0].name);
+            setActiveTeamId(fetchedTeams[0].id);
+            setActiveTeamName(fetchedTeams[0].name);
+            setShowTeamSelector(false);
+          } else if (fetchedTeams.length > 1) {
+            console.log("[Effect] User has multiple teams, showing selector.");
+            setShowTeamSelector(true); // This will be true if TeamSelector component existed
+          } else {
+            console.log("[Effect] User has no teams.");
+             // No teams, activeTeamId remains null, main page will show "no teams" message
+            setShowTeamSelector(false); // Ensure selector is not shown
+             if (!isDemoMode) { // If not in demo mode and no teams, set activeTeamId to null
+                setActiveTeamId(null);
+                setActiveTeamName(null);
+             } else {
+                 // In demo mode, if no real teams, use mock team
+                 setActiveTeamId(mockTeamId);
+                 setActiveTeamName("Mock Demo Team");
+                 setRetroItems(mockInitialItems);
+                 setPollResponses(mockInitialPollResponses);
+             }
+          }
+        } else {
+          console.warn("[Effect] User document not found in Firestore for UID:", currentUser.uid, ". This may cause issues.");
+          // Fallback for missing user doc:
+          const fallbackEmail = currentUser.email || `${currentUser.uid}@example.com`;
+          setAppUser({
+            id: currentUser.uid,
+            name: currentUser.displayName || fallbackEmail.split('@')[0] || 'User',
+            email: fallbackEmail,
+            avatarUrl: currentUser.photoURL || getGravatarUrl(fallbackEmail, 100)!,
+            role: APP_ROLES.MEMBER,
+            teamIds: [],
+          });
+          setUserTeams([]);
+          setShowTeamSelector(false); // No teams, no selector
+           if (isDemoMode) { // Fallback to demo data if user doc missing in demo mode
+                setActiveTeamId(mockTeamId);
+                setActiveTeamName("Mock Demo Team");
+                setRetroItems(mockInitialItems);
+                setPollResponses(mockInitialPollResponses);
+           } else {
+                setActiveTeamId(null);
+                setActiveTeamName(null);
+           }
+        }
+      } catch (error) {
+        console.error("[Effect] Error fetching user data or teams:", error);
+        toast({ title: "Error Loading Profile", description: "Could not load your profile or team data.", variant: "destructive" });
+      } finally {
+        console.log("[Effect] Finished fetching initial user data. setIsLoading to false");
+        setIsLoading(false);
+      }
+    };
+
+    fetchInitialUserData();
+
+  }, [currentUser, authLoading, router, toast, isDemoMode]);
+
+
+  // Subscribe to active team's retro items and poll responses
+ useEffect(() => {
+    if (isDemoMode && activeTeamId === mockTeamId) {
+        console.log("[Effect] Demo mode active, using mock data. Clearing listeners if any.");
+        setRetroItems(mockInitialItems);
+        setPollResponses(mockInitialPollResponses);
+        if (appUser) { // Check if appUser is available
+            const userResponseExists = mockInitialPollResponses.some(resp => resp.author.id === appUser.id);
+            setHasSubmitted(userResponseExists);
+        }
+        return; // Don't set up Firestore listeners in demo mode with mockTeamId
+    }
+
+    if (!activeTeamId || !appUser) {
+      console.log("[Effect] No active REAL team or appUser, clearing retro/poll data. Active Team ID:", activeTeamId, "App User:", appUser ? appUser.id : 'none');
+      setRetroItems([]);
+      setPollResponses([]);
+      setHasSubmitted(false);
+      return;
+    }
+    console.log(`[Effect] Active team ID: ${activeTeamId}. Setting up listeners for retro items and poll responses.`);
+
+    // Listener for Retro Items
+    const retroItemsQuery = query(collection(db, `teams/${activeTeamId}/retroItems`));
+    const unsubscribeRetroItems = onSnapshot(retroItemsQuery, (snapshot) => {
+        const items: RetroItem[] = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            items.push({
+                id: doc.id,
+                ...data,
+                timestamp: (data.timestamp as Timestamp)?.toDate ? (data.timestamp as Timestamp).toDate() : new Date(data.timestamp), // Ensure timestamp is Date
+                replies: (data.replies || []).map((reply: any) => ({
+                    ...reply,
+                    id: reply.id || Math.random().toString(36).substring(2,9), // Ensure reply has an ID for key prop
+                    timestamp: (reply.timestamp as Timestamp)?.toDate ? (reply.timestamp as Timestamp).toDate() : new Date(reply.timestamp),
+                }))
+            } as RetroItem);
+        });
+        console.log(`[Effect] Retro items updated for team ${activeTeamId}:`, items.length, "items");
+        setRetroItems(items);
+    }, (error) => {
+        console.error(`[Effect] Error fetching retro items for team ${activeTeamId}:`, error);
+        toast({ title: "Error", description: "Could not load retrospective items.", variant: "destructive" });
+    });
+
+    // Listener for Poll Responses
+    const pollResponsesQuery = query(collection(db, `teams/${activeTeamId}/pollResponses`));
+    const unsubscribePollResponses = onSnapshot(pollResponsesQuery, (snapshot) => {
+        const responses: PollResponse[] = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            responses.push({
+                id: doc.id,
+                ...data,
+                 timestamp: (data.timestamp as Timestamp)?.toDate ? (data.timestamp as Timestamp).toDate() : new Date(data.timestamp) // Ensure timestamp is Date
+            } as PollResponse);
+        });
+        console.log(`[Effect] Poll responses updated for team ${activeTeamId}:`, responses.length, "responses");
+        setPollResponses(responses);
+        const userResponseExists = responses.some(resp => resp.author.id === appUser.id);
+        console.log(`[Effect] User ${appUser.id} has submitted poll for team ${activeTeamId}:`, userResponseExists);
+        setHasSubmitted(userResponseExists);
+    }, (error) => {
+        console.error(`[Effect] Error fetching poll responses for team ${activeTeamId}:`, error);
+        toast({ title: "Error", description: "Could not load poll responses.", variant: "destructive" });
+    });
+
+    return () => {
+        console.log(`[Effect Cleanup] Unsubscribing from retro items and poll responses for team ${activeTeamId}.`);
+        unsubscribeRetroItems();
+        unsubscribePollResponses();
+    };
+}, [activeTeamId, appUser, toast, isDemoMode]); // Added isDemoMode to dependencies
 
 
   // Recalculate hasSubmitted if pollResponses change
   useEffect(() => {
-     if (!currentUser) return;
-    const userResponseExists = pollResponses.some(resp => resp.author.id === currentUser.uid);
-    setHasSubmitted(userResponseExists); // Update state based on fetched poll responses
-    // No need to persist submission status here, it's derived from pollResponses
-  }, [pollResponses, currentUser]);
+     if (!appUser || !activeTeamId || (isDemoMode && activeTeamId === mockTeamId)) return;
+    const userResponseExists = pollResponses.some(resp => resp.author.id === appUser.id);
+    setHasSubmitted(userResponseExists);
+    console.log(`[Effect] Poll responses changed. User ${appUser.id} has submitted for team ${activeTeamId}:`, userResponseExists);
+  }, [pollResponses, appUser, activeTeamId, isDemoMode]);
 
 
   // Memoize the current user's response for editing and rating adjustment
   const currentUserResponse = useMemo(() => {
-     if (!currentUser) return undefined;
-    return pollResponses.find(resp => resp.author.id === currentUser.uid);
-  }, [pollResponses, currentUser]);
+     if (!appUser || !activeTeamId) return undefined;
+    const response = pollResponses.find(resp => resp.author.id === appUser.id);
+    console.log(`[Memo] currentUserResponse for user ${appUser.id} in team ${activeTeamId}:`, response ? response.id : 'none');
+    return response;
+  }, [pollResponses, appUser, activeTeamId]);
 
 
   // Derived state for showing poll/results
   const shouldShowResults = useMemo(() => {
-    // Default to closed unless editing
-     return !isEditingPoll && hasSubmitted; // Show results only if submitted and not editing
+    const show = !isEditingPoll && hasSubmitted;
+    console.log(`[Memo] shouldShowResults: ${show} (isEditingPoll: ${isEditingPoll}, hasSubmitted: ${hasSubmitted})`);
+    return show;
   }, [hasSubmitted, isEditingPoll]);
 
   const shouldShowPollForm = useMemo(() => {
-      return !hasSubmitted || isEditingPoll; // Show form if not submitted OR editing
+      const show = !hasSubmitted || isEditingPoll;
+      console.log(`[Memo] shouldShowPollForm: ${show} (hasSubmitted: ${hasSubmitted}, isEditingPoll: ${isEditingPoll})`);
+      return show;
   }, [hasSubmitted, isEditingPoll]);
 
 
   // Function to remove existing AI-generated items for a specific poll response
-  const removeExistingPollItems = useCallback((responseId: string) => {
-       // TODO: Implement logic to remove items from DB if persisting
-      setRetroItems(prev => prev.filter(item => !(item.isFromPoll && item.pollResponseId === responseId)));
-  }, []);
+  const removeExistingPollItems = useCallback(async (responseId: string) => {
+       if (!activeTeamId || (isDemoMode && activeTeamId === mockTeamId)) return; // Don't modify Firestore in demo mode
+       console.log(`[Callback] removeExistingPollItems for responseId ${responseId} in team ${activeTeamId}`);
+       // Remove from Firestore
+      try {
+        const itemsToRemoveQuery = query(
+            collection(db, `teams/${activeTeamId}/retroItems`),
+            where("pollResponseId", "==", responseId)
+        );
+        const itemsSnapshot = await getFirestoreDocs(itemsToRemoveQuery); // Use renamed getFirestoreDocs
+        const batch = writeBatch(db);
+        itemsSnapshot.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+        console.log(`[Callback] Successfully removed ${itemsSnapshot.size} existing poll items from Firestore for responseId ${responseId}.`);
+      } catch (error) {
+        console.error(`[Callback] Error removing existing poll items from Firestore for responseId ${responseId}:`, error);
+        toast({ title: "Error", description: "Could not clean up previous feedback items.", variant: "destructive" });
+      }
+  }, [activeTeamId, toast, isDemoMode]);
 
 
   const processJustification = useCallback(async (rating: number, justification: string, responseId: string) => {
-      if (!appUser) return; // Ensure appUser is loaded
+      if (!appUser || !activeTeamId) {
+        console.warn("[Callback] processJustification: appUser or activeTeamId missing.");
+        return;
+      }
+      if (isDemoMode && activeTeamId === mockTeamId) {
+          console.log("[Callback] Demo mode: Skipping Firestore for processJustification.");
+           const author = appUser;
+           const existingItems = retroItems.filter(item => item.pollResponseId !== responseId);
+           let newDemoItems: RetroItem[] = [];
 
-       // Remove any previously generated items for this poll response BEFORE adding new ones
-       removeExistingPollItems(responseId);
+           if (!justification.trim()) {
+                const category = rating >= 4 ? 'well' : rating <= 2 ? 'improve' : 'discuss';
+                newDemoItems.push({
+                    id: `demo-item-${Date.now()}`,
+                    pollResponseId: responseId,
+                    author: author,
+                    content: `Rated ${rating} stars.`,
+                    timestamp: new Date(),
+                    category: category,
+                    isFromPoll: true,
+                    teamId: mockTeamId
+                });
+           } else {
+                // Simulate AI categorization for demo
+                const sentences = justification.split('. ').filter(s => s.length > 0);
+                newDemoItems = sentences.map((sentence, index) => ({
+                     id: `demo-item-${Date.now()}-${index}`,
+                     pollResponseId: responseId,
+                     author: author,
+                     content: sentence,
+                     timestamp: new Date(),
+                     category: (index % 2 === 0 && rating > 2) || rating >=4 ? 'well' : 'improve', // Simple demo logic
+                     isFromPoll: true,
+                     teamId: mockTeamId
+                }));
+                if (newDemoItems.length === 0) { // fallback if split fails
+                    newDemoItems.push({
+                        id: `demo-item-${Date.now()}-full`,
+                        pollResponseId: responseId,
+                        author: author,
+                        content: justification,
+                        timestamp: new Date(),
+                        category: 'discuss',
+                        isFromPoll: true,
+                        teamId: mockTeamId
+                    });
+                }
+           }
+           setRetroItems([...existingItems, ...newDemoItems]);
+          return;
+      }
 
-      const author = appUser; // Use the appUser state
+       console.log(`[Callback] processJustification for responseId ${responseId}, rating ${rating}, team ${activeTeamId}`);
+       await removeExistingPollItems(responseId);
+       const author = appUser;
 
       if (!justification.trim()) {
-          // If no justification, add a single item based on rating
+          if (isEditingPoll && currentUserResponse?.justification) {
+             // If editing, had a justification before, and now it's empty,
+             // do NOT add a generic "Rated X stars" item. The intent is to clear justification.
+             console.log("[Callback] Justification cleared during edit. No new item added.");
+             toast({
+                title: "Justification Cleared",
+                description: "Your previous justification text has been removed.",
+             });
+             return;
+          }
           const category = rating >= 4 ? 'well' : rating <= 2 ? 'improve' : 'discuss';
-          const newItem: RetroItem = {
-              id: `poll-${responseId}-ratingonly`, // TODO: Use DB generated ID
+          const newItemContent = `Rated ${rating} stars.`;
+          const newItemRef = await addDoc(collection(db, `teams/${activeTeamId}/retroItems`), {
               pollResponseId: responseId,
-              author: author,
-              content: `Rated ${rating} stars.`, // Simple content for rating-only
-              timestamp: new Date(), // Use serverTimestamp in DB
+              author: { id: author.id, name: author.name, email: author.email, avatarUrl: author.avatarUrl, role: author.role },
+              content: newItemContent,
+              timestamp: serverTimestamp(),
               category: category,
               isFromPoll: true,
-          };
-           // TODO: Add newItem to DB
-          setRetroItems(prev => [...prev, newItem]);
+              teamId: activeTeamId,
+          });
+           console.log(`[Callback] Added rating-only item to Firestore with ID: ${newItemRef.id}`);
           toast({
               title: isEditingPoll ? "Feedback Updated" : "Feedback Added",
               description: `Your rating was added to "${category === 'well' ? 'What Went Well' : category === 'improve' ? 'What Could Be Improved' : 'Discussion Topics'}".`,
           });
-          return; // Exit early as there's no text to categorize
+          return;
       }
 
-
-      // If justification exists, call the categorization AI
       try {
           const categorizedSentences = await categorizeJustification({ rating, justification });
+          console.log("[Callback] Categorized sentences from AI:", categorizedSentences);
 
           if (categorizedSentences && categorizedSentences.length > 0) {
-            const newItems: RetroItem[] = categorizedSentences.map((categorizedSentence, index) => ({
-                id: `poll-${responseId}-s${index}`, // TODO: Use DB generated ID
-                pollResponseId: responseId,
-                author: author,
-                content: categorizedSentence.sentence,
-                timestamp: new Date(), // Use serverTimestamp in DB
-                category: categorizedSentence.category, // Use AI category ('well' or 'improve')
-                isFromPoll: true,
-            }));
+            const batch = writeBatch(db);
+            categorizedSentences.forEach((categorizedSentence) => {
+                const newItemDocRef = doc(collection(db, `teams/${activeTeamId}/retroItems`)); // Auto-generate ID
+                batch.set(newItemDocRef, {
+                    pollResponseId: responseId,
+                    author: { id: author.id, name: author.name, email: author.email, avatarUrl: author.avatarUrl, role: author.role },
+                    content: categorizedSentence.sentence,
+                    timestamp: serverTimestamp(),
+                    category: categorizedSentence.category,
+                    isFromPoll: true,
+                    teamId: activeTeamId,
+                });
+            });
+            await batch.commit();
+            console.log(`[Callback] Added ${categorizedSentences.length} categorized items to Firestore.`);
 
-             // TODO: Add newItems to DB
-            setRetroItems(prev => [...prev, ...newItems]);
-
-            const wellCount = newItems.filter(item => item.category === 'well').length;
-            const improveCount = newItems.filter(item => item.category === 'improve').length;
+            const wellCount = categorizedSentences.filter(item => item.category === 'well').length;
+            const improveCount = categorizedSentences.filter(item => item.category === 'improve').length;
             let description = "Your feedback was processed.";
             if (wellCount > 0 && improveCount > 0) {
                 description = `Added ${wellCount} item(s) to 'What Went Well' and ${improveCount} item(s) to 'What Could Be Improved'.`;
@@ -289,549 +490,589 @@ function RetroSpectifyPageContent() {
             } else if (improveCount > 0) {
                  description = `Added ${improveCount} item(s) to 'What Could Be Improved'.`;
             }
-
-             toast({
-                 title: isEditingPoll ? "Feedback Updated" : "Feedback Categorized",
-                 description: description,
-             });
-          } else if (justification.trim()) {
-             // If AI returns empty but justification exists, treat the whole justification as 'discuss'
-             const newItem: RetroItem = {
-               id: `poll-${responseId}-discuss`, // TODO: Use DB generated ID
+             toast({ title: isEditingPoll ? "Feedback Updated" : "Feedback Categorized", description });
+          } else if (justification.trim()) { // If AI returns nothing, but justification is not empty
+             const newItemRef = await addDoc(collection(db, `teams/${activeTeamId}/retroItems`), {
                pollResponseId: responseId,
-               author: author,
-               content: justification, // Use the full justification
-               timestamp: new Date(), // Use serverTimestamp in DB
-               category: 'discuss', // Default to discuss if no specific sentences categorized
+               author: { id: author.id, name: author.name, email: author.email, avatarUrl: author.avatarUrl, role: author.role },
+               content: justification,
+               timestamp: serverTimestamp(),
+               category: 'discuss', // Fallback to 'discuss'
                isFromPoll: true,
-             };
-              // TODO: Add newItem to DB
-             setRetroItems(prev => [...prev, newItem]);
-             toast({
-               title: isEditingPoll ? "Feedback Updated" : "Feedback Added",
-               description: "Your feedback couldn't be auto-categorized by sentence, added to 'Discussion Topics'.",
-               variant: "default",
+               teamId: activeTeamId,
              });
+             console.log(`[Callback] Added full justification as 'discuss' item to Firestore with ID: ${newItemRef.id}`);
+             toast({ title: isEditingPoll ? "Feedback Updated" : "Feedback Added", description: "Your feedback couldn't be auto-categorized by sentence, added to 'Discussion Topics'." });
           }
       } catch (error) {
-          console.error("Error processing justification:", error);
-          toast({
-            title: "Categorization Error",
-            description: "Could not automatically categorize your feedback. Added to 'Discussion Topics'.",
-            variant: "destructive",
-          });
-           // Fallback: Add the entire justification as a 'discuss' item on error
-           const newItem: RetroItem = {
-               id: `poll-${responseId}-error`, // TODO: Use DB generated ID
+          console.error("[Callback] Error processing justification with AI:", error);
+          toast({ title: "Categorization Error", description: "Could not automatically categorize your feedback. Added to 'Discussion Topics'.", variant: "destructive" });
+           const newItemRef = await addDoc(collection(db, `teams/${activeTeamId}/retroItems`), {
                pollResponseId: responseId,
-               author: author,
-               content: justification, // Use full justification on error
-               timestamp: new Date(), // Use serverTimestamp in DB
-               category: 'discuss', // Fallback to discuss on error
+               author: { id: author.id, name: author.name, email: author.email, avatarUrl: author.avatarUrl, role: author.role },
+               content: justification,
+               timestamp: serverTimestamp(),
+               category: 'discuss',
                isFromPoll: true,
-           };
-            // TODO: Add newItem to DB
-           setRetroItems(prev => [...prev, newItem]);
+               teamId: activeTeamId,
+           });
+           console.log(`[Callback] Added fallback 'discuss' item to Firestore due to AI error. ID: ${newItemRef.id}`);
       }
-  }, [appUser, removeExistingPollItems, toast, isEditingPoll]); // Depend on appUser
+  }, [appUser, activeTeamId, removeExistingPollItems, toast, isEditingPoll, isDemoMode, retroItems, currentUserResponse]);
 
 
-  const handlePollSubmit = useCallback((rating: number, justification: string) => {
-     if (!appUser) return; // Ensure appUser is loaded
+  const handlePollSubmit = useCallback(async (rating: number, justification: string) => {
+     if (!appUser || !activeTeamId) {
+        console.warn("[Callback] handlePollSubmit: appUser or activeTeamId missing.");
+        return;
+     }
+     console.log(`[Callback] handlePollSubmit for team ${activeTeamId}. Rating: ${rating}, Editing: ${isEditingPoll}`);
 
-    let responseId: string;
-    let isUpdate = false;
+      if (isDemoMode && activeTeamId === mockTeamId) {
+          console.log("[Callback] Demo mode: Simulating poll submit.");
+          const existingResponse = pollResponses.find(resp => resp.author.id === appUser.id);
+          let responseId: string;
+          if (isEditingPoll && existingResponse) {
+              responseId = existingResponse.id;
+              const updatedResponses = pollResponses.map(r => r.id === responseId ? {...r, rating, justification, timestamp: new Date()} : r);
+              setPollResponses(updatedResponses);
+          } else {
+              responseId = `demo-poll-${Date.now()}`;
+              const newResponse: PollResponse = {
+                  id: responseId,
+                  author: appUser,
+                  rating,
+                  justification,
+                  timestamp: new Date(),
+                  teamId: mockTeamId,
+              };
+              setPollResponses([...pollResponses, newResponse]);
+          }
+          setHasSubmitted(true);
+          processJustification(rating, justification, responseId);
+          setIsEditingPoll(false);
+          return;
+      }
+
 
     const existingResponse = pollResponses.find(resp => resp.author.id === appUser.id);
+    let responseId: string;
 
     if (isEditingPoll && existingResponse) {
-        // --- Update existing response ---
         responseId = existingResponse.id;
-        isUpdate = true;
-         // TODO: Update response in DB
-        setPollResponses(prev =>
-            prev.map(resp =>
-                resp.id === responseId
-                    ? { ...resp, rating, justification, timestamp: new Date() } // Use serverTimestamp in DB
-                    : resp
-            )
-        );
-         toast({
-             title: "Poll Response Updated",
-             description: "Your sentiment feedback has been updated.",
-         });
-
-    } else {
-         // --- Add new response ---
-        responseId = `resp-${Date.now()}`; // TODO: Use DB generated ID
-        const newResponse: PollResponse = {
-            id: responseId,
-            author: appUser,
+        const responseDocRef = doc(db, `teams/${activeTeamId}/pollResponses`, responseId);
+        await updateDoc(responseDocRef, {
             rating,
             justification,
-            timestamp: new Date(), // Use serverTimestamp in DB
-        };
-         // TODO: Add newResponse to DB
-        setPollResponses(prev => [...prev, newResponse]);
-        setHasSubmitted(true); // Update local submission state
-
-         toast({
-             title: "Poll Response Submitted",
-             description: "Thank you for your feedback!",
-         });
+            timestamp: serverTimestamp(),
+        });
+        console.log(`[Callback] Updated poll response ${responseId} in Firestore.`);
+        toast({ title: "Poll Response Updated", description: "Your sentiment feedback has been updated." });
+    } else {
+        const newResponseRef = await addDoc(collection(db, `teams/${activeTeamId}/pollResponses`), {
+            author: { id: appUser.id, name: appUser.name, email: appUser.email, avatarUrl: appUser.avatarUrl, role: appUser.role },
+            rating,
+            justification,
+            timestamp: serverTimestamp(),
+            teamId: activeTeamId,
+        });
+        responseId = newResponseRef.id;
+        console.log(`[Callback] Added new poll response ${responseId} to Firestore.`);
+        toast({ title: "Poll Response Submitted", description: "Thank you for your feedback!" });
     }
-
-    // Process justification (will also remove old items if updating)
+    setHasSubmitted(true); // Optimistically update, listener will confirm
     processJustification(rating, justification, responseId);
-
-    setIsEditingPoll(false); // Exit editing mode after submit/update
-  }, [appUser, isEditingPoll, pollResponses, processJustification, toast]); // Depend on appUser
+    setIsEditingPoll(false);
+  }, [appUser, activeTeamId, isEditingPoll, pollResponses, processJustification, toast, isDemoMode]);
 
   const handleEditPoll = useCallback(() => {
+    console.log("[Callback] handleEditPoll triggered.");
     setIsEditingPoll(true);
   }, []);
 
-  // Function to cancel editing the poll
   const handleCancelEditPoll = useCallback(() => {
+    console.log("[Callback] handleCancelEditPoll triggered.");
     setIsEditingPoll(false);
-    // Optionally, show a toast or message indicating edit was cancelled
     toast({ title: "Edit Cancelled", description: "Your vote remains unchanged." });
   }, [toast]);
 
 
-  const handleAddItem = useCallback((category: Category) => (content: string) => {
-     if (!appUser) return; // Ensure appUser is loaded
-    const newItem: RetroItem = {
-      id: `${category}-${Date.now()}`, // TODO: Use DB generated ID
-      author: appUser,
+  const handleAddItem = useCallback(async (category: Category) => async (content: string) => {
+     if (!appUser || !activeTeamId) {
+        console.warn("[Callback] handleAddItem: appUser or activeTeamId missing.");
+        return;
+     }
+     if (isDemoMode && activeTeamId === mockTeamId) {
+         console.log(`[Callback] Demo mode: Simulating add item to ${category}.`);
+         const newItem: RetroItem = {
+             id: `demo-item-manual-${Date.now()}`,
+             author: appUser,
+             content,
+             timestamp: new Date(),
+             category,
+             isFromPoll: false,
+             teamId: mockTeamId,
+         };
+         setRetroItems(prev => [...prev, newItem]);
+         return;
+     }
+
+     console.log(`[Callback] handleAddItem to category ${category} for team ${activeTeamId}. Content: ${content.substring(0,20)}...`);
+    const newItemRef = await addDoc(collection(db, `teams/${activeTeamId}/retroItems`), {
+      author: { id: appUser.id, name: appUser.name, email: appUser.email, avatarUrl: appUser.avatarUrl, role: appUser.role },
       content,
-      timestamp: new Date(), // Use serverTimestamp in DB
+      timestamp: serverTimestamp(),
       category,
-      isFromPoll: false, // Manually added items are not from the poll
-    };
-     // TODO: Add newItem to DB
-    setRetroItems(prev => [...prev, newItem]);
+      isFromPoll: false,
+      teamId: activeTeamId,
+    });
+    console.log(`[Callback] Added new retro item ${newItemRef.id} to Firestore.`);
      toast({
         title: "Item Added",
         description: `Your item was added to "${category === 'discuss' ? 'Discussion Topics' : category === 'action' ? 'Action Items' : category === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`,
       });
-  }, [appUser, toast]); // Depend on appUser
+  }, [appUser, activeTeamId, toast, isDemoMode]);
 
-  // --- Edit Item Handler ---
-  const handleEditItem = useCallback((itemId: string, newContent: string) => {
-    if (!appUser) return; // Ensure appUser is loaded
+  const handleEditItem = useCallback(async (itemId: string, newContent: string) => {
+    if (!appUser || !activeTeamId) {
+        console.warn("[Callback] handleEditItem: appUser or activeTeamId missing.");
+        return;
+    }
+    if (isDemoMode && activeTeamId === mockTeamId) {
+        console.log(`[Callback] Demo mode: Simulating edit item ${itemId}.`);
+        setRetroItems(prevItems => prevItems.map(item => item.id === itemId ? {...item, content: newContent, timestamp: new Date()} : item));
+        return;
+    }
 
-    setRetroItems(prev =>
-        prev.map(item => {
-            if (item.id === itemId) {
-                // Permission check: Author or Admin
-                const canEdit = item.author.id === appUser.id || appUser.role === APP_ROLES.ADMIN;
-                if (!canEdit) {
-                    toast({ title: "Cannot Edit", description: "You don't have permission to edit this item.", variant: "destructive" });
-                    return { ...item, editing: false }; // Revert editing state if UI was toggled prematurely
-                }
-                 // TODO: Update item content in DB
-                 toast({ title: "Item Updated", description: "Changes saved." });
-                return { ...item, content: newContent, timestamp: new Date(), editing: false }; // Update content and timestamp, turn off editing state
-            }
-            return item;
-        })
-    );
-  }, [appUser, toast]); // Depend on appUser
+    console.log(`[Callback] handleEditItem for item ${itemId}, new content: ${newContent.substring(0,20)}...`);
+    const itemRef = doc(db, `teams/${activeTeamId}/retroItems`, itemId);
+    const itemDoc = await getDoc(itemRef);
 
-  // Handle generating a new action item from a discussion topic
+    if (!itemDoc.exists()) {
+        toast({ title: "Error", description: "Item not found.", variant: "destructive" });
+        return;
+    }
+    const itemData = itemDoc.data();
+    const canEdit = itemData.author.id === appUser.id || appUser.role === APP_ROLES.ADMIN;
+
+    if (!canEdit) {
+        toast({ title: "Cannot Edit", description: "You don't have permission to edit this item.", variant: "destructive" });
+        return;
+    }
+    await updateDoc(itemRef, {
+        content: newContent,
+        timestamp: serverTimestamp(), // Update timestamp on edit
+    });
+    console.log(`[Callback] Updated retro item ${itemId} in Firestore.`);
+    toast({ title: "Item Updated", description: "Changes saved." });
+  }, [appUser, activeTeamId, toast, isDemoMode]);
+
   const handleGenerateActionItem = useCallback(async (discussionItemId: string) => {
-      if (!appUser) return; // Ensure appUser is loaded
-
+      if (!appUser || !activeTeamId) {
+        console.warn("[Callback] handleGenerateActionItem: appUser or activeTeamId missing.");
+        return;
+      }
+      if (isDemoMode && activeTeamId === mockTeamId) {
+          console.log(`[Callback] Demo mode: Simulating generate action item from ${discussionItemId}.`);
+          const discussionItem = retroItems.find(item => item.id === discussionItemId);
+          if (discussionItem) {
+            const newActionItem: RetroItem = {
+                 id: `demo-action-${Date.now()}`,
+                 author: appUser,
+                 content: `ACTION: Address "${discussionItem.content.substring(0,30)}..."`,
+                 timestamp: new Date(),
+                 category: 'action',
+                 isFromPoll: false,
+                 teamId: mockTeamId,
+            };
+            setRetroItems(prev => [...prev, newActionItem]);
+          }
+          return;
+      }
+      console.log(`[Callback] handleGenerateActionItem for discussion item ${discussionItemId} in team ${activeTeamId}`);
       const discussionItem = retroItems.find(item => item.id === discussionItemId);
-
       if (!discussionItem || discussionItem.category !== 'discuss') {
           toast({ title: "Error", description: "Could not find the discussion topic or it's not a discussion item.", variant: "destructive" });
           return;
       }
-
-      // Permission check: Only author or admin can generate action from discussion
       const canGenerate = discussionItem.author.id === appUser.id || appUser.role === APP_ROLES.ADMIN;
        if (!canGenerate) {
             toast({ title: "Permission Denied", description: "Only the author or an admin can generate an action item from this discussion.", variant: "destructive" });
             return;
         }
-
-
-      toast({ title: "Generating Action Item...", description: "Please wait.", variant: "default" });
-
+      toast({ title: "Generating Action Item...", description: "Please wait." });
       try {
           const { actionItem: generatedContent } = await generateActionItem({ discussionTopic: discussionItem.content });
-
-          // Create the new action item using the generated content
-          const newActionItem: RetroItem = {
-              id: `action-${Date.now()}`, // TODO: Use DB generated ID
-              author: appUser, // Current user generates the action item
+          const newActionItemRef = await addDoc(collection(db, `teams/${activeTeamId}/retroItems`), {
+              author: { id: appUser.id, name: appUser.name, email: appUser.email, avatarUrl: appUser.avatarUrl, role: appUser.role },
               content: generatedContent,
-              timestamp: new Date(), // Use serverTimestamp in DB
+              timestamp: serverTimestamp(),
               category: 'action',
               isFromPoll: false,
-              // Optional: Link back to the original discussion item?
-              // linkedDiscussionId: discussionItem.id,
-          };
-
-          // TODO: Add newActionItem to DB
-          setRetroItems(prev => [...prev, newActionItem]);
-
-          toast({
-              title: "Action Item Created",
-              description: `Generated action item: "${generatedContent}"`,
+              teamId: activeTeamId,
+              // linkedDiscussionId: discussionItem.id, // Optional
           });
-
+          console.log(`[Callback] Generated action item ${newActionItemRef.id} in Firestore.`);
+          toast({ title: "Action Item Created", description: `Generated action item: "${generatedContent}"` });
       } catch (error) {
-          console.error("Error generating action item:", error);
-          toast({
-              title: "Action Item Generation Failed",
-              description: "Could not generate an action item from the discussion topic.",
-              variant: "destructive",
-          });
+          console.error("[Callback] Error generating action item with AI:", error);
+          toast({ title: "Action Item Generation Failed", description: "Could not generate an action item.", variant: "destructive" });
       }
+  }, [retroItems, appUser, activeTeamId, toast, isDemoMode]);
 
-  }, [retroItems, appUser, toast]); // Depend on appUser
 
-
-  const handleAddReply = useCallback((itemId: string, replyContent: string) => {
-     if (!appUser) return; // Ensure appUser is loaded
-
-    // Find the parent item to inherit its category
-    const parentItem = retroItems.find(item => item.id === itemId);
-    if (!parentItem) return; // Should not happen if UI is correct
-
-    // TODO: Update replies in DB (potentially nested or separate collection)
-    setRetroItems(prev => prev.map(item => {
-      if (item.id === itemId) {
-        const newReply: RetroItem = {
-          id: `reply-${itemId}-${Date.now()}`, // TODO: Use DB generated ID
-          author: appUser,
-          content: replyContent,
-          timestamp: new Date(), // Use serverTimestamp in DB
-          isFromPoll: false, // Replies are not directly from poll submission
-          category: parentItem.category, // Replies inherit category of parent item
-        };
-        return {
-          ...item,
-          replies: [...(item.replies ?? []), newReply],
-        };
-      }
-      return item;
-    }));
-     toast({
-        title: "Reply Added",
-     });
-  }, [appUser, retroItems, toast]); // Include retroItems in dependencies
-
-   const handleDeleteItem = useCallback((itemId: string) => {
-     if (!appUser) return; // Ensure appUser is loaded
-
-     const itemToDelete = retroItems.find(item => item.id === itemId);
-     if (!itemToDelete) return;
-
-     // Permission check: Author or Admin
-     const canDelete = itemToDelete.author.id === appUser.id || appUser.role === APP_ROLES.ADMIN;
-
-     if (!canDelete) {
-          toast({
-             title: "Cannot Delete",
-             description: "You don't have permission to delete this item.",
-             variant: "destructive"
-          });
-          return;
+  const handleAddReply = useCallback(async (itemId: string, replyContent: string) => {
+     if (!appUser || !activeTeamId) {
+        console.warn("[Callback] handleAddReply: appUser or activeTeamId missing.");
+        return;
      }
-
-     // Prevent deleting items generated from the current user's *uneditable* poll response
-     // Allow deletion if the poll is currently being edited OR if user is admin
-     if (itemToDelete.isFromPoll && itemToDelete.author.id === appUser.id && !isEditingPoll && appUser.role !== APP_ROLES.ADMIN) {
-         toast({
-            title: "Cannot Delete Poll Item",
-            description: "Edit your poll response to change items derived from it, or delete the entire response.",
-            variant: "destructive"
-         });
+     if (isDemoMode && activeTeamId === mockTeamId) {
+         console.log(`[Callback] Demo mode: Simulating add reply to ${itemId}.`);
+         setRetroItems(prevItems => prevItems.map(item => {
+             if (item.id === itemId) {
+                 const newReply: RetroItem = {
+                     id: `demo-reply-${Date.now()}`,
+                     author: appUser,
+                     content: replyContent,
+                     timestamp: new Date(),
+                     category: item.category,
+                     isFromPoll: false,
+                     teamId: mockTeamId,
+                 };
+                 return {...item, replies: [...(item.replies || []), newReply]};
+             }
+             return item;
+         }));
          return;
      }
+     console.log(`[Callback] handleAddReply to item ${itemId} in team ${activeTeamId}. Reply: ${replyContent.substring(0,20)}...`);
+    const itemRef = doc(db, `teams/${activeTeamId}/retroItems`, itemId);
+    const itemDoc = await getDoc(itemRef);
+    if (!itemDoc.exists()) {
+        toast({ title: "Error", description: "Parent item not found.", variant: "destructive" });
+        return;
+    }
+    const parentItemData = itemDoc.data();
+    const newReplyId = doc(collection(db, `teams/${activeTeamId}/retroItems`)).id; // Generate an ID for the reply
 
-     // TODO: Delete item from DB
-    setRetroItems(prev => prev.filter(item => item.id !== itemId));
-    toast({
-        title: "Item Deleted",
-        variant: "destructive"
+    const newReply: Omit<RetroItem, 'teamId'> & { id: string } = { // teamId will be part of the path
+      id: newReplyId, // Add the generated ID
+      author: { id: appUser.id, name: appUser.name, email: appUser.email, avatarUrl: appUser.avatarUrl, role: appUser.role },
+      content: replyContent,
+      timestamp: serverTimestamp(),
+      isFromPoll: false,
+      category: parentItemData.category, // Inherit category
+    };
+    await updateDoc(itemRef, {
+        replies: [...(parentItemData.replies || []), newReply]
     });
-   }, [appUser, isEditingPoll, retroItems, toast]); // Depend on appUser
+    console.log(`[Callback] Added reply to item ${itemId} in Firestore.`);
+    toast({ title: "Reply Added" });
+  }, [appUser, activeTeamId, toast, isDemoMode]);
+
+   const handleDeleteItem = useCallback(async (itemId: string) => {
+     if (!appUser || !activeTeamId) {
+        console.warn("[Callback] handleDeleteItem: appUser or activeTeamId missing.");
+        return;
+     }
+     if (isDemoMode && activeTeamId === mockTeamId) {
+         console.log(`[Callback] Demo mode: Simulating delete item ${itemId}.`);
+         setRetroItems(prevItems => prevItems.filter(item => item.id !== itemId));
+         return;
+     }
+     console.log(`[Callback] handleDeleteItem ${itemId} in team ${activeTeamId}`);
+     const itemRef = doc(db, `teams/${activeTeamId}/retroItems`, itemId);
+     const itemDoc = await getDoc(itemRef);
+     if (!itemDoc.exists()) {
+        toast({ title: "Error", description: "Item not found.", variant: "destructive" });
+        return;
+     }
+     const itemData = itemDoc.data();
+     const canDelete = itemData.author.id === appUser.id || appUser.role === APP_ROLES.ADMIN;
+     if (!canDelete) {
+          toast({ title: "Cannot Delete", description: "You don't have permission to delete this item.", variant: "destructive" });
+          return;
+     }
+     if (itemData.isFromPoll && itemData.author.id === appUser.id && !isEditingPoll && appUser.role !== APP_ROLES.ADMIN) {
+         toast({ title: "Cannot Delete Poll Item", description: "Edit your poll response to change items derived from it, or delete the entire response.", variant: "destructive" });
+         return;
+     }
+     await deleteDoc(itemRef);
+     console.log(`[Callback] Deleted retro item ${itemId} from Firestore.`);
+    toast({ title: "Item Deleted", variant: "destructive" });
+   }, [appUser, activeTeamId, isEditingPoll, toast, isDemoMode]);
 
 
-   // --- Drag and Drop Handlers ---
    const handleDragStart = useCallback((itemId: string) => {
-     const item = retroItems.find(i => i.id === itemId);
-      // Allow drag if user is admin OR is the author
+    console.log(`[Callback] handleDragStart for item ${itemId}`);
+    const item = retroItems.find(i => i.id === itemId);
       if (item && (item.author.id === appUser?.id || appUser?.role === APP_ROLES.ADMIN)) {
          setDraggingItemId(itemId);
      } else {
-          // Prevent dragging if not allowed
          setDraggingItemId(null);
-         console.log("Drag prevented: Not owner or admin.");
+         console.log("[Callback] Drag prevented: Not owner or admin.");
      }
-   }, [retroItems, appUser]); // Add dependencies
+   }, [retroItems, appUser]);
 
 
    const handleDragEnd = useCallback(() => {
+      console.log("[Callback] handleDragEnd.");
       setDraggingItemId(null);
    }, []);
 
-    const handleMoveItem = useCallback((itemId: string, targetCategory: Category) => {
-        if (!appUser) {
-             console.error("Cannot move item: User not loaded.");
+    const handleMoveItem = useCallback(async (itemId: string, targetCategory: Category) => {
+        if (!appUser || !activeTeamId) {
+             console.warn("[Callback] handleMoveItem: appUser or activeTeamId missing.");
              return;
-         }
-
+        }
+         if (isDemoMode && activeTeamId === mockTeamId) {
+            console.log(`[Callback] Demo mode: Simulating move item ${itemId} to ${targetCategory}.`);
+             setRetroItems(prevItems => prevItems.map(item => item.id === itemId ? {...item, category: targetCategory, timestamp: new Date()} : item));
+             setDraggingItemId(null);
+             return;
+        }
+        console.log(`[Callback] handleMoveItem ${itemId} to category ${targetCategory} in team ${activeTeamId}`);
         const itemToMove = retroItems.find(item => item.id === itemId);
-
         if (!itemToMove) {
-            console.error("Cannot move item: Item not found.");
             toast({ title: "Move Error", description: "Item not found.", variant: "destructive" });
             setDraggingItemId(null);
             return;
         }
-
-         // Permission check: Author or Admin
          const canMove = itemToMove.author.id === appUser.id || appUser.role === APP_ROLES.ADMIN;
          if (!canMove) {
-             console.log("Prevented move: User does not have permission.");
-             toast({
-                 title: "Cannot Move Item",
-                 description: "You don't have permission to move this item.",
-                 variant: "destructive"
-             });
-             setDraggingItemId(null); // Clear dragging state
+             toast({ title: "Cannot Move Item", description: "You don't have permission to move this item.", variant: "destructive" });
+             setDraggingItemId(null);
              return;
          }
-
         if (itemToMove.category === targetCategory) {
-            console.log("Move cancelled: Same category.");
             setDraggingItemId(null);
             return;
         }
-
-        // Special Case: Moving from 'discuss' to 'action' triggers generation
         if (itemToMove.category === 'discuss' && targetCategory === 'action') {
-            console.log("Triggering action item generation for:", itemId);
-            handleGenerateActionItem(itemId); // Trigger AI generation (includes permission check)
+            handleGenerateActionItem(itemId);
             setDraggingItemId(null);
-            return; // Stop further processing for this drop
+            return;
         }
-
-         // Restriction: Prevent moving *anything else* directly into 'action'
          if (targetCategory === 'action' && itemToMove.category !== 'discuss') {
-             console.log("Prevented move: Cannot move non-discussion to action.");
-             toast({
-                 title: "Cannot Move to Action Items",
-                 description: "Action Items can only be generated from Discussion Topics or added manually.",
-                 variant: "destructive",
-             });
+             toast({ title: "Cannot Move to Action Items", description: "Action Items can only be generated from Discussion Topics or added manually.", variant: "destructive" });
              setDraggingItemId(null);
-             return; // Stop further processing
+             return;
          }
 
-         // Check for moving between 'well' and 'improve' AND if the item belongs to the current user BEFORE the state update
          const isWellToImprove = itemToMove.category === 'well' && targetCategory === 'improve';
          const isImproveToWell = itemToMove.category === 'improve' && targetCategory === 'well';
          const userIsAuthor = itemToMove.author.id === appUser.id;
-         const shouldPromptRating = (isWellToImprove || isImproveToWell) && userIsAuthor && currentUserResponse;
+         const userCurrentResponse = pollResponses.find(resp => resp.author.id === appUser.id);
 
+         // Update item in Firestore
+        const itemRef = doc(db, `teams/${activeTeamId}/retroItems`, itemId);
+        await updateDoc(itemRef, {
+            category: targetCategory,
+            timestamp: serverTimestamp(), // Update timestamp on move
+        });
+        console.log(`[Callback] Moved retro item ${itemId} to category ${targetCategory} in Firestore.`);
 
-         // --- Proceed with moving the item in the state ---
-         // TODO: Update item category in DB
-         setRetroItems(prev =>
-             prev.map(item =>
-                 item.id === itemId
-                     ? { ...item, category: targetCategory, timestamp: new Date() }
-                     : item
-             )
-         );
-         // Show toast AFTER state update
-         toast({
-             title: "Item Moved",
-             description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`
-         });
+         toast({ title: "Item Moved", description: `Item moved to "${targetCategory === 'discuss' ? 'Discussion Topics' : targetCategory === 'well' ? 'What Went Well' : 'What Could Be Improved'}".` });
 
-
-         // If moving between 'well' and 'improve' by the author, prompt for rating adjustment
-         if (shouldPromptRating && currentUserResponse) {
-             // Calculate suggested rating
+         if ((isWellToImprove || isImproveToWell) && userIsAuthor && userCurrentResponse) {
              const suggestedRating = isWellToImprove
-                 ? Math.max(1, currentUserResponse.rating - 1)
-                 : Math.min(5, currentUserResponse.rating + 1);
-
-             if (suggestedRating !== currentUserResponse.rating) {
-                console.log("Prompting for rating adjustment (author move).");
-                setRatingAdjustmentProps({
-                    itemIdToAdjust: itemId, // Store the ID of the item that triggered the modal
-                    currentRating: currentUserResponse.rating,
-                    suggestedRating: suggestedRating,
-                });
+                 ? Math.max(1, userCurrentResponse.rating - 1)
+                 : Math.min(5, userCurrentResponse.rating + 1);
+             if (suggestedRating !== userCurrentResponse.rating) {
+                setRatingAdjustmentProps({ itemIdToAdjust: itemId, currentRating: userCurrentResponse.rating, suggestedRating });
                 setIsAdjustRatingModalOpen(true);
-                // Modal will handle rating update or cancellation
              }
          }
-
-         setDraggingItemId(null); // Clear drag state after processing move
-
-    }, [appUser, retroItems, toast, handleGenerateActionItem, currentUserResponse]); // Depend on appUser
+         setDraggingItemId(null);
+    }, [appUser, activeTeamId, retroItems, pollResponses, toast, handleGenerateActionItem, isDemoMode]);
 
 
-    // Handler for AdjustRatingModal confirmation
-    const handleAdjustRatingConfirm = useCallback((newRating: number) => {
-        try {
-            if (!currentUserResponse || !appUser) {
-                 console.error("Cannot confirm rating adjustment: Missing context.");
-                 setIsAdjustRatingModalOpen(false); // Close modal even if error
-                 setRatingAdjustmentProps(null);
-                 return;
-            }
-
-            // 1. Update poll response rating
-            // TODO: Update poll response rating in DB
-            setPollResponses(prev =>
-                prev.map(resp =>
-                    resp.id === currentUserResponse.id
-                        ? { ...resp, rating: newRating, timestamp: new Date() }
-                        : resp
-                )
-            );
-
-            toast({
-                title: "Rating Adjusted",
-                description: `Your sentiment rating updated to ${newRating} stars.`,
-            });
-        } catch (error) {
-            console.error("Error in handleAdjustRatingConfirm:", error);
-            toast({
-                 title: "Error Adjusting Rating",
-                 description: "Could not update rating.",
-                 variant: "destructive"
-             });
-        } finally {
-            setIsAdjustRatingModalOpen(false);
-            setRatingAdjustmentProps(null);
-            // Item is already moved, no need to do anything else here
+    const handleAdjustRatingConfirm = useCallback(async (newRating: number) => {
+        if (!currentUserResponse || !appUser || !activeTeamId) {
+             console.warn("[Callback] handleAdjustRatingConfirm: Missing context (currentUserResponse, appUser, or activeTeamId).");
+             setIsAdjustRatingModalOpen(false);
+             setRatingAdjustmentProps(null);
+             return;
         }
-    }, [currentUserResponse, appUser, toast]);
-
-    // Handler for AdjustRatingModal cancellation
-    const handleAdjustRatingCancel = useCallback(() => {
-         try {
-             if (ratingAdjustmentProps) { // Check if props exist before accessing
-                 toast({
-                     title: "Item Moved, Rating Unchanged",
-                     description: `Item moved, but sentiment rating kept at ${ratingAdjustmentProps.currentRating} stars.`,
-                 });
-             } else {
-                 // Fallback if props are somehow null
-                 toast({
-                      title: "Item Moved, Rating Unchanged",
-                      description: `Item moved, sentiment rating kept at previous value.`,
-                  });
-             }
-         } catch (error) {
-             console.error("Error in handleAdjustRatingCancel:", error);
-              toast({
-                 title: "Error",
-                 description: "An unexpected error occurred while closing the rating dialog.",
-                 variant: "destructive"
-              });
-         } finally {
+        if (isDemoMode && activeTeamId === mockTeamId) {
+            console.log(`[Callback] Demo mode: Simulating adjust rating to ${newRating}.`);
+            setPollResponses(prevResponses => prevResponses.map(r => r.id === currentUserResponse.id ? {...r, rating: newRating, timestamp: new Date()} : r));
             setIsAdjustRatingModalOpen(false);
             setRatingAdjustmentProps(null);
-             // Item is already moved
+            return;
+        }
+        console.log(`[Callback] handleAdjustRatingConfirm for team ${activeTeamId}. New rating: ${newRating}`);
+        const responseDocRef = doc(db, `teams/${activeTeamId}/pollResponses`, currentUserResponse.id);
+        await updateDoc(responseDocRef, {
+            rating: newRating,
+            timestamp: serverTimestamp(),
+        });
+        console.log(`[Callback] Updated poll response rating to ${newRating} in Firestore.`);
+        toast({ title: "Rating Adjusted", description: `Your sentiment rating updated to ${newRating} stars.` });
+        setIsAdjustRatingModalOpen(false);
+        setRatingAdjustmentProps(null);
+    }, [currentUserResponse, appUser, activeTeamId, toast, isDemoMode]);
+
+    const handleAdjustRatingCancel = useCallback(() => {
+         console.log("[Callback] handleAdjustRatingCancel.");
+         if (ratingAdjustmentProps) {
+             toast({ title: "Item Moved, Rating Unchanged", description: `Item moved, but sentiment rating kept at ${ratingAdjustmentProps.currentRating} stars.` });
+         } else {
+             toast({ title: "Item Moved, Rating Unchanged", description: `Item moved, sentiment rating kept at previous value.` });
          }
-    }, [toast, ratingAdjustmentProps]); // Depend on ratingAdjustmentProps
+        setIsAdjustRatingModalOpen(false);
+        setRatingAdjustmentProps(null);
+    }, [toast, ratingAdjustmentProps]);
 
 
   const filterItems = (category: Category) => {
-    const topLevelItems = retroItems.filter(item =>
-        !retroItems.some(parent => parent.replies && parent.replies.some(reply => reply.id === item.id))
-    );
-    return topLevelItems.filter(item => item.category === category).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+    const filtered = retroItems.filter(item => item.category === category)
+                               .sort((a, b) => {
+                                 const tsA = a.timestamp instanceof Timestamp ? a.timestamp.toMillis() : new Date(a.timestamp).getTime();
+                                 const tsB = b.timestamp instanceof Timestamp ? b.timestamp.toMillis() : new Date(b.timestamp).getTime();
+                                 return tsB - tsA;
+                               });
+    // console.log(`[Filter] Items for category ${category}:`, filtered.length);
+    return filtered;
   };
 
-   // --- Logout Handler ---
     const handleLogout = async () => {
+        console.log("[Callback] handleLogout triggered.");
         try {
             await signOut(auth);
             toast({ title: "Logged Out", description: "You have been successfully logged out." });
-            router.push('/login'); // Redirect to login page after logout
+            setActiveTeamId(null); // Clear active team on logout
+            setActiveTeamName(null);
+            setAppUser(null);
+            setUserTeams([]);
+            router.push('/login');
         } catch (error) {
-            console.error("Logout error:", error);
+            console.error("[Callback] Logout error:", error);
             toast({ title: "Logout Failed", description: "Could not log you out. Please try again.", variant: "destructive" });
         }
     };
 
-   // Loading state UI
-  if (isLoading || !appUser) {
+    const handleSelectTeam = (teamId: string) => {
+        console.log(`[Callback] handleSelectTeam: ${teamId}`);
+        const selectedTeam = userTeams.find(t => t.id === teamId);
+        if (selectedTeam) {
+            setActiveTeamId(selectedTeam.id);
+            setActiveTeamName(selectedTeam.name);
+            setShowTeamSelector(false);
+             // Persist active team choice if needed (e.g., localStorage)
+            // localStorage.setItem('activeTeamId', selectedTeam.id);
+            // localStorage.setItem('activeTeamName', selectedTeam.name);
+        }
+    };
+
+    const handleChangeTeam = () => {
+        console.log("[Callback] handleChangeTeam triggered.");
+        setShowTeamSelector(true);
+        setActiveTeamId(null); // Clear active team to force re-selection
+        setActiveTeamName(null);
+        setRetroItems([]); // Clear items when changing team
+        setPollResponses([]); // Clear poll responses
+    };
+
+
+  if (isLoading || authLoading || !appUser) { // Combined loading conditions
+    console.log("[Render] Showing loading screen. isLoading:", isLoading, "authLoading:", authLoading, "appUser:", appUser ? appUser.id : 'none');
     return (
       <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
         <header className="mb-8 flex justify-between items-center">
              <h1 className="text-3xl font-bold text-primary">RetroSpectify</h1>
              <div className="flex items-center space-x-3">
-                  <Skeleton className="h-10 w-24 rounded-md" /> {/* Skeleton for Teams button */}
-                  {/* Add Skeleton for Admin Dashboard if applicable */}
-                  <Skeleton className="h-10 w-10 rounded-full" /> {/* Skeleton for user avatar */}
-                  <Skeleton className="h-10 w-24 rounded-md" /> {/* Skeleton for logout button */}
+                  <Skeleton className="h-10 w-24 rounded-md" />
+                  <Skeleton className="h-10 w-10 rounded-full" />
+                  <Skeleton className="h-10 w-24 rounded-md" />
              </div>
         </header>
-         <div className="mb-6">
-             <Skeleton className="h-48 w-full rounded-lg" />
-         </div>
-         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-           {[1, 2, 3, 4].map((i) => (
-                <Card key={i} className="shadow-md">
-                    <CardHeader className="border-b">
-                      <Skeleton className="h-6 w-3/4 rounded" />
-                    </CardHeader>
-                    <CardContent className="p-4 space-y-4">
-                      <Skeleton className="h-20 w-full rounded" />
-                      <Skeleton className="h-20 w-full rounded" />
-                    </CardContent>
-                    <CardFooter className="border-t p-4">
-                         <Skeleton className="h-10 w-full rounded" />
-                    </CardFooter>
-                </Card>
-            ))}
+         <div className="flex justify-center items-center h-[calc(100vh-200px)]">
+             <Loader2 className="h-16 w-16 animate-spin text-primary" />
          </div>
          <Toaster />
       </div>
     );
   }
 
-  const canInteractWithTeams = appUser.role === APP_ROLES.ADMIN || (appUser.teamIds && appUser.teamIds.length > 0);
-  const canCreateTeam = appUser.role === APP_ROLES.ADMIN;
-  const showTeamsButton = canInteractWithTeams || canCreateTeam; // Show if admin or belongs to teams or can create one
+  if (showTeamSelector && !isDemoMode) { // Only show real team selector if not in demo mode
+    console.log("[Render] Showing TeamSelector. User teams:", userTeams.length);
+    // The TeamSelector component was removed, so this path needs to be handled differently.
+    // For now, if multiple teams exist, we might just show a message or default to the first one.
+    // Or, simply don't allow this state if TeamSelector is gone.
+    // Fallback to showing a message:
+    return (
+        <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
+             <header className="mb-8 flex justify-between items-center flex-wrap gap-4">
+                <div className="flex items-center gap-4">
+                    <h1 className="text-3xl font-bold text-primary">RetroSpectify</h1>
+                </div>
+                <div className="flex items-center space-x-3">
+                     <Link href="/me" passHref>
+                        <div className="flex items-center space-x-2 cursor-pointer hover:bg-secondary p-1 rounded-md transition-colors">
+                            <span className="text-sm font-medium hidden sm:inline">{appUser.name}</span>
+                            <Avatar>
+                                <AvatarImage src={appUser.avatarUrl} alt={appUser.name} data-ai-hint="avatar profile picture"/>
+                                <AvatarFallback>{appUser.name.charAt(0).toUpperCase()}</AvatarFallback>
+                            </Avatar>
+                        </div>
+                     </Link>
+                     <Button variant="outline" size="sm" onClick={handleLogout}>
+                        <LogOut className="mr-2 h-4 w-4" /> Logout
+                     </Button>
+                </div>
+            </header>
+            <Card className="mt-8 shadow-lg border-primary/20 bg-primary/5">
+                <CardHeader>
+                  <CardTitle className="text-xl font-semibold text-primary flex items-center">
+                    <PackageSearch className="mr-3 h-6 w-6" /> Select a Team
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                    <p className="text-muted-foreground">You are a member of multiple teams. Please choose one to proceed:</p>
+                    {userTeams.map(team => (
+                        <Button key={team.id} variant="outline" className="w-full justify-start" onClick={() => handleSelectTeam(team.id)}>
+                            {team.name}
+                        </Button>
+                    ))}
+                </CardContent>
+            </Card>
+            <Toaster />
+        </div>
+    );
+  }
+
+
+  const canInteractWithCurrentTeam = !!activeTeamId && (isDemoMode || (appUser.teamIds || []).includes(activeTeamId));
+  console.log(`[Render] Can interact with current team (${activeTeamId}):`, canInteractWithCurrentTeam);
 
   return (
     <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
         <header className="mb-8 flex justify-between items-center flex-wrap gap-4">
-            <h1 className="text-3xl font-bold text-primary">RetroSpectify</h1>
+            <div className="flex items-center gap-4">
+                <h1 className="text-3xl font-bold text-primary">RetroSpectify</h1>
+                {activeTeamName && <span className="text-xl text-muted-foreground">({activeTeamName})</span>}
+            </div>
             <div className="flex items-center space-x-3">
-                 {/* Link to Team Creation or a Team Dashboard */}
-                 {showTeamsButton && (
+                 {userTeams.length > 1 && activeTeamId && !isDemoMode && ( // Only show change team if multiple REAL teams and one is active
+                     <Button variant="outline" size="sm" onClick={handleChangeTeam}>
+                         <PackageSearch className="mr-2 h-4 w-4" /> Change Team
+                     </Button>
+                 )}
+                  {((appUser.role === APP_ROLES.ADMIN && !isDemoMode) || (userTeams && userTeams.length > 0 && !isDemoMode)) && ( // Only show if admin OR has teams, and NOT demo mode
                      <Link href="/teams" passHref>
                          <Button variant="outline" size="sm">
-                             <Users className="mr-2 h-4 w-4" /> Teams
+                             <Users className="mr-2 h-4 w-4" /> My Teams
                          </Button>
                      </Link>
                  )}
-                 {/* Link to Admin Dashboard (only for admins) */}
-                 {appUser.role === APP_ROLES.ADMIN && (
+                 {appUser.role === APP_ROLES.ADMIN && !isDemoMode && ( // Only show admin if admin and NOT demo mode
                      <Link href="/admin" passHref>
                          <Button variant="outline" size="sm">
                              <ShieldCheck className="mr-2 h-4 w-4" /> Admin
                          </Button>
                      </Link>
                  )}
-                  {/* Link to Me page */}
                  <Link href="/me" passHref>
                     <div className="flex items-center space-x-2 cursor-pointer hover:bg-secondary p-1 rounded-md transition-colors">
                         <span className="text-sm font-medium hidden sm:inline">{appUser.name}</span>
@@ -841,42 +1082,88 @@ function RetroSpectifyPageContent() {
                         </Avatar>
                     </div>
                  </Link>
-                 {/* Logout Button */}
                  <Button variant="outline" size="sm" onClick={handleLogout}>
                     <LogOut className="mr-2 h-4 w-4" /> Logout
                  </Button>
             </div>
         </header>
 
-        {/* Conditional Rendering based on team membership and admin status */}
-        {canInteractWithTeams ? (
+        {isDemoMode && (
+          <Card className="mb-6 bg-yellow-50 border-yellow-300">
+            <CardHeader>
+              <CardTitle className="text-yellow-700 flex items-center">
+                <Info className="mr-2 h-5 w-5" /> Demo Mode Active
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-yellow-600">
+                You are currently in Demo Mode. Data shown is for demonstration purposes and may not reflect real team activity.
+                Some features related to real-time data persistence might behave differently.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {!activeTeamId && !isLoading && !isDemoMode && ( // Only show if not loading, no active REAL team, and not demo mode
+             <Card className="mt-8 shadow-lg border-primary/20 bg-primary/5">
+                <CardHeader>
+                  <CardTitle className="text-xl font-semibold text-primary flex items-center">
+                    <Info className="mr-3 h-6 w-6" /> Welcome to RetroSpectify!
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {userTeams.length > 0 ? (
+                         <p className="text-muted-foreground">
+                           Please select a team to continue. Use the &quot;Change Team&quot; button if available, or one might be automatically selected.
+                         </p>
+                    ) : (
+                        <>
+                             <p className="text-muted-foreground">
+                               It looks like you&apos;re not part of any team yet.
+                             </p>
+                             <p className="text-muted-foreground mt-2">
+                               Please contact an administrator or a team owner to be added to a team.
+                               Once you&apos;re on a team, you&apos;ll be able to participate in retrospectives.
+                             </p>
+                        </>
+                    )}
+                  {appUser.role === APP_ROLES.ADMIN && userTeams.length === 0 && (
+                    <p className="text-muted-foreground mt-4">
+                      As an administrator, you can <Link href="/teams/create" className="text-primary hover:underline">create a new team</Link> or manage existing teams and users.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+        )}
+
+
+        {activeTeamId && canInteractWithCurrentTeam ? (
             <>
                 <div className="mb-6 md:mb-8">
                     {shouldShowPollForm && (
                         <PollSection
                             currentUser={appUser}
                             onSubmitPoll={handlePollSubmit}
-                            initialRating={isEditingPoll ? currentUserResponse?.rating : 0}
-                            initialJustification={isEditingPoll ? currentUserResponse?.justification : ''}
+                            initialRating={isEditingPoll && currentUserResponse ? currentUserResponse.rating : 0}
+                            initialJustification={isEditingPoll && currentUserResponse ? currentUserResponse.justification : ''}
                             isEditing={isEditingPoll}
-                            onCancelEdit={handleCancelEditPoll} // Pass the cancel handler
+                            onCancelEdit={handleCancelEditPoll}
                         />
                     )}
-                    {shouldShowResults && ( // Show results container if user has submitted (or is admin?) - controlled by shouldShowResults
+                    {shouldShowResults && (
                         <PollResultsSection
                             responses={pollResponses}
-                            onEdit={handleEditPoll} // Only pass if user can edit (user has voted)
-                            currentUserHasVoted={!!currentUserResponse} // Let component know if current user voted
+                            onEdit={handleEditPoll}
+                            currentUserHasVoted={!!currentUserResponse}
                         />
                     )}
-                    {!shouldShowPollForm && !currentUserResponse && (
+                    {!shouldShowPollForm && !currentUserResponse && ( // Shown if user hasn't voted yet (and not editing)
                         <Card className="shadow-md border border-input bg-card text-center p-6">
                             <CardDescription>Submit your sentiment in the poll above to see the team results.</CardDescription>
                         </Card>
                     )}
                 </div>
 
-                {/* Retro Board Sections */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
                     <RetroSection
                         title="What Went Well"
@@ -886,7 +1173,7 @@ function RetroSpectifyPageContent() {
                         onAddItem={handleAddItem('well')}
                         onAddReply={handleAddReply}
                         onMoveItem={handleMoveItem}
-                        onEditItem={handleEditItem} // Pass handler
+                        onEditItem={handleEditItem}
                         onDeleteItem={handleDeleteItem}
                         allowAddingItems={true}
                         draggingItemId={draggingItemId}
@@ -902,7 +1189,7 @@ function RetroSpectifyPageContent() {
                         onAddItem={handleAddItem('improve')}
                         onAddReply={handleAddReply}
                         onMoveItem={handleMoveItem}
-                        onEditItem={handleEditItem} // Pass handler
+                        onEditItem={handleEditItem}
                         onDeleteItem={handleDeleteItem}
                         allowAddingItems={true}
                         draggingItemId={draggingItemId}
@@ -918,7 +1205,7 @@ function RetroSpectifyPageContent() {
                         onAddItem={handleAddItem('discuss')}
                         onAddReply={handleAddReply}
                         onMoveItem={handleMoveItem}
-                        onEditItem={handleEditItem} // Pass handler
+                        onEditItem={handleEditItem}
                         onDeleteItem={handleDeleteItem}
                         allowAddingItems={true}
                         draggingItemId={draggingItemId}
@@ -934,7 +1221,7 @@ function RetroSpectifyPageContent() {
                         onAddItem={handleAddItem('action')}
                         onAddReply={handleAddReply}
                         onMoveItem={handleMoveItem}
-                        onEditItem={handleEditItem} // Pass handler
+                        onEditItem={handleEditItem}
                         onDeleteItem={handleDeleteItem}
                         allowAddingItems={true}
                         draggingItemId={draggingItemId}
@@ -945,29 +1232,7 @@ function RetroSpectifyPageContent() {
                     />
                 </div>
             </>
-        ) : (
-          <Card className="mt-8 shadow-lg border-primary/20 bg-primary/5">
-            <CardHeader>
-              <CardTitle className="text-xl font-semibold text-primary flex items-center">
-                <Info className="mr-3 h-6 w-6" /> Welcome to RetroSpectify!
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">
-                It looks like you&apos;re not part of any team yet.
-              </p>
-              <p className="text-muted-foreground mt-2">
-                Please contact an administrator or a team owner to be added to a team.
-                Once you&apos;re on a team, you&apos;ll be able to participate in retrospectives.
-              </p>
-              {appUser.role === APP_ROLES.ADMIN && (
-                <p className="text-muted-foreground mt-4">
-                  As an administrator, you can <Link href="/teams/create" className="text-primary hover:underline">create a new team</Link> or manage existing teams and users.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        )}
+        ) : null}
 
 
        {ratingAdjustmentProps && isAdjustRatingModalOpen && (
@@ -995,3 +1260,5 @@ export default function RetroSpectifyPage() {
 
 
     
+
+
