@@ -19,13 +19,15 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardHeader, CardContent, CardFooter, CardDescription, CardTitle } from '@/components/ui/card'; // Added CardTitle
 import { Button } from '@/components/ui/button'; // Import Button
-import { Users, LogOut, ShieldCheck, Info, Settings, PackageSearch, Loader2 } from 'lucide-react'; // Import Users, LogOut, ShieldCheck, Info, Settings icons
+import { Users, LogOut, ShieldCheck, Info, Settings, PackageSearch, Loader2, Send, Star } from 'lucide-react'; // Import Users, LogOut, ShieldCheck, Info, Settings icons, Send
 import ProtectedRoute from '@/components/auth/ProtectedRoute'; // Import ProtectedRoute
 import { useAuth } from '@/context/AuthContext'; // Import useAuth
 import { auth, db } from '@/lib/firebase'; // Import auth and db
 import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
 import { APP_ROLES, TEAM_ROLES } from '@/lib/types'; // Import APP_ROLES
-// import { TeamSelector } from '@/components/retrospectify/TeamSelector'; // Removed as TeamSelector file was deleted
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { generateRetroReport } from '@/ai/flows/generate-retro-report';
 
 
 const mockTeamId = "mock-team-123"; // Define a mock team ID for demo data
@@ -48,6 +50,13 @@ function RetroSpectifyPageContent() {
   const [activeTeamName, setActiveTeamName] = useState<string | null>(null);
   const [userTeams, setUserTeams] = useState<Team[]>([]);
   const [showTeamSelector, setShowTeamSelector] = useState(false);
+
+  // State for Scrum Master tools
+  const [teamDetails, setTeamDetails] = useState<Team | null>(null); // For current team details including SM
+  const [teamMembersForScrumMasterSelection, setTeamMembersForScrumMasterSelection] = useState<User[]>([]);
+  const [selectedNextScrumMasterUid, setSelectedNextScrumMasterUid] = useState<string | null>(null);
+  const [isEndingRetro, setIsEndingRetro] = useState(false);
+
 
   const { toast } = useToast();
   console.log("[Page Lifecycle] RetroSpectifyPageContent rendering. Auth loading:", authLoading, "Current user:", currentUser ? currentUser.uid : 'none', "Active Team ID:", activeTeamId);
@@ -204,6 +213,70 @@ function RetroSpectifyPageContent() {
   }, [currentUser, authLoading, router, toast, isDemoMode]);
 
 
+  // Fetch active team details (for scrum master info) and members for SM selection
+  useEffect(() => {
+    if (!activeTeamId || (isDemoMode && activeTeamId === mockTeamId)) {
+      setTeamDetails(null);
+      setTeamMembersForScrumMasterSelection([]);
+      return;
+    }
+
+    const fetchTeamAndMembers = async () => {
+      try {
+        // Fetch team details
+        const teamDocRef = doc(db, 'teams', activeTeamId);
+        const teamDocSnap = await getDoc(teamDocRef);
+        if (teamDocSnap.exists()) {
+          const teamData = { id: teamDocSnap.id, ...teamDocSnap.data() } as Team;
+          setTeamDetails(teamData);
+
+          // Fetch members of this team
+          if (teamData.members && teamData.members.length > 0) {
+            const memberDetails: User[] = [];
+            const memberUIDs = Object.keys(teamData.memberRoles); // Assuming memberRoles keys are UIDs
+            
+            const userChunks: string[][] = [];
+            for (let i = 0; i < memberUIDs.length; i += 30) {
+                userChunks.push(memberUIDs.slice(i, i + 30));
+            }
+
+            for (const chunk of userChunks) {
+              if(chunk.length > 0) {
+                const usersQuery = query(collection(db, 'users'), where('uid', 'in', chunk));
+                const usersSnapshot = await getFirestoreDocs(usersQuery);
+                usersSnapshot.forEach(userDoc => {
+                  const uData = userDoc.data();
+                  memberDetails.push({
+                    id: userDoc.id,
+                    name: uData.displayName || uData.email?.split('@')[0] || 'User',
+                    email: uData.email || 'unknown@example.com',
+                    avatarUrl: uData.avatarUrl || getGravatarUrl(uData.email, 100)!,
+                    role: uData.role || APP_ROLES.MEMBER, // App role
+                    teamIds: uData.teamIds || [],
+                  });
+                });
+              }
+            }
+            setTeamMembersForScrumMasterSelection(memberDetails.sort((a, b) => a.name.localeCompare(b.name)));
+          } else {
+            setTeamMembersForScrumMasterSelection([]);
+          }
+        } else {
+          setTeamDetails(null);
+          setTeamMembersForScrumMasterSelection([]);
+        }
+      } catch (error) {
+        console.error("Error fetching team details or members for SM selection:", error);
+        toast({ title: "Error", description: "Could not load team information for Scrum Master tools.", variant: "destructive" });
+        setTeamDetails(null);
+        setTeamMembersForScrumMasterSelection([]);
+      }
+    };
+
+    fetchTeamAndMembers();
+  }, [activeTeamId, isDemoMode, toast]);
+
+
   // Subscribe to active team's retro items and poll responses
  useEffect(() => {
     console.log(`[Effect] Dependency change for listeners. isDemoMode: ${isDemoMode}, activeTeamId: ${activeTeamId}, appUser: ${appUser ? appUser.id : 'null'}`);
@@ -221,18 +294,13 @@ function RetroSpectifyPageContent() {
         setRetroItems([]); // Clear any existing items
         setPollResponses([]); // Clear any existing responses
         setHasSubmitted(false); // Reset submission state
-        // You might populate mock data here if desired, e.g.,
-        // setRetroItems(mockDemoRetroItems);
-        // setPollResponses(mockDemoPollResponses);
-        // setHasSubmitted(mockDemoPollResponses.some(r => r.author.id === appUser.id));
-        return; // Crucially, return to avoid setting up Firestore listeners for mockTeamId
+        return; 
     }
     
     console.log(`[Effect] Active team ID: ${activeTeamId}. Setting up listeners for retro items and poll responses.`);
 
-    // Listener for Retro Items
     const retroItemsCollectionRef = collection(db, `teams/${activeTeamId}/retroItems`);
-    const retroItemsQueryRef = query(retroItemsCollectionRef); // No specific where clauses needed here, just listen to the collection
+    const retroItemsQueryRef = query(retroItemsCollectionRef); 
 
     const unsubscribeRetroItems = onSnapshot(retroItemsQueryRef, (snapshot) => {
         const items: RetroItem[] = [];
@@ -256,9 +324,8 @@ function RetroSpectifyPageContent() {
         toast({ title: "Error", description: "Could not load retrospective items.", variant: "destructive" });
     });
 
-    // Listener for Poll Responses
     const pollResponsesCollectionRef = collection(db, `teams/${activeTeamId}/pollResponses`);
-    const pollResponsesQueryRef = query(pollResponsesCollectionRef); // Listen to the collection
+    const pollResponsesQueryRef = query(pollResponsesCollectionRef); 
 
     const unsubscribePollResponses = onSnapshot(pollResponsesQueryRef, (snapshot) => {
         const responses: PollResponse[] = [];
@@ -473,7 +540,6 @@ function RetroSpectifyPageContent() {
             rating,
             justification,
             timestamp: serverTimestamp(),
-            // teamId is already set on creation
         });
         console.log(`[Callback] Updated poll response ${responseId} in Firestore.`);
         toast({ title: "Poll Response Updated", description: "Your sentiment feedback has been updated." });
@@ -483,7 +549,7 @@ function RetroSpectifyPageContent() {
             rating,
             justification,
             timestamp: serverTimestamp(),
-            teamId: activeTeamId, // Store teamId
+            teamId: activeTeamId, 
         });
         responseId = newResponseRef.id;
         console.log(`[Callback] Added new poll response ${responseId} to Firestore.`);
@@ -525,7 +591,7 @@ function RetroSpectifyPageContent() {
       timestamp: serverTimestamp(),
       category,
       isFromPoll: false,
-      teamId: activeTeamId, // Store teamId
+      teamId: activeTeamId, 
     });
     console.log(`[Callback] Added new retro item ${newItemRef.id} to Firestore.`);
      toast({
@@ -599,7 +665,7 @@ function RetroSpectifyPageContent() {
               timestamp: serverTimestamp(),
               category: 'action',
               isFromPoll: false,
-              teamId: activeTeamId, // Store teamId
+              teamId: activeTeamId, 
           });
           console.log(`[Callback] Generated action item ${newActionItemRef.id} in Firestore.`);
           toast({ title: "Action Item Created", description: `Generated action item: "${generatedContent}"` });
@@ -850,6 +916,92 @@ function RetroSpectifyPageContent() {
         localStorage.removeItem('activeTeamName');
     };
 
+    // Function to handle "End Retrospective" from home page
+    const handleEndRetrospectiveOnHomePage = async () => {
+        if (!activeTeamId || !teamDetails || !appUser || !selectedNextScrumMasterUid) return;
+        if (!(appUser.role === APP_ROLES.ADMIN || teamDetails.scrumMasterUid === appUser.id || teamDetails.owner === appUser.id)) {
+            toast({ title: "Permission Denied", description: "Only the Scrum Master, team owner, or an admin can end the retrospective.", variant: "destructive" });
+            return;
+        }
+
+        setIsEndingRetro(true);
+        toast({ title: "Processing Retrospective...", description: "Generating report and preparing emails." });
+
+        try {
+            const pollResponsesColRef = collection(db, `teams/${activeTeamId}/pollResponses`);
+            const retroItemsColRef = collection(db, `teams/${activeTeamId}/retroItems`);
+
+            const pollResponsesSnapshot = await getFirestoreDocs(pollResponsesColRef);
+            const pollResponsesData: PollResponse[] = pollResponsesSnapshot.docs.map(d => ({ id: d.id, ...d.data(), teamId: activeTeamId } as PollResponse));
+
+            const retroItemsSnapshot = await getFirestoreDocs(retroItemsColRef);
+            const retroItemsData: RetroItem[] = retroItemsSnapshot.docs.map(d => ({ id: d.id, ...d.data(), teamId: activeTeamId } as RetroItem));
+
+            const reportInput: Parameters<typeof generateRetroReport>[0] = {
+                teamId: teamDetails.id,
+                teamName: teamDetails.name,
+                pollResponses: pollResponsesData,
+                retroItems: retroItemsData,
+                currentScrumMaster: teamMembersForScrumMasterSelection.find(m => m.id === teamDetails.scrumMasterUid) || null,
+            };
+            // The generateRetroReport flow will use the existing SM logic if nextScrumMaster is not explicitly passed from here.
+            // We *are* passing it if selectedNextScrumMasterUid is set.
+            const reportOutput = await generateRetroReport({
+                ...reportInput,
+                // Pass the selected next scrum master directly to the flow if available
+                nextScrumMaster: teamMembersForScrumMasterSelection.find(m => m.id === selectedNextScrumMasterUid) || undefined,
+            });
+
+            const memberEmails = teamMembersForScrumMasterSelection.map(member => member.email).filter(email => !!email);
+            if (memberEmails.length > 0) {
+                await fetch('/api/send-email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        to: memberEmails.join(','),
+                        subject: `Retrospective Report for ${teamDetails.name} - ${new Date().toLocaleDateString()}`,
+                        htmlBody: reportOutput.reportSummaryHtml,
+                    }),
+                });
+                toast({ title: "Report Emailed", description: "Retrospective summary sent to team members." });
+            }
+
+            const batch = writeBatch(db);
+            pollResponsesSnapshot.forEach(doc => batch.delete(doc.ref));
+            retroItemsSnapshot.forEach(doc => batch.delete(doc.ref));
+            
+            // Use the pre-selected next Scrum Master
+            if (selectedNextScrumMasterUid && selectedNextScrumMasterUid !== teamDetails.scrumMasterUid) {
+                 batch.update(doc(db, 'teams', teamDetails.id), { scrumMasterUid: selectedNextScrumMasterUid });
+                 const smUser = teamMembersForScrumMasterSelection.find(m => m.id === selectedNextScrumMasterUid);
+                 toast({ title: "Next Scrum Master Set", description: `${smUser ? smUser.name : 'Selected user'} is now the Scrum Master.` });
+            } else if (!selectedNextScrumMasterUid && teamDetails.scrumMasterUid) {
+                batch.update(doc(db, 'teams', teamDetails.id), { scrumMasterUid: null });
+                toast({ title: "Scrum Master Cleared" });
+            }
+
+
+            await batch.commit();
+            toast({ title: "Retrospective Data Cleared", description: "Items and votes for this team have been cleared."});
+
+            toast({ title: "Retrospective Completed!", description: "Report generated and process finished.", duration: 7000 });
+            // Reset selection
+            setSelectedNextScrumMasterUid(null);
+             // Refetch team details to update UI for scrum master
+            const updatedTeamDocSnap = await getDoc(doc(db, 'teams', activeTeamId));
+            if (updatedTeamDocSnap.exists()) {
+                setTeamDetails({ id: updatedTeamDocSnap.id, ...updatedTeamDocSnap.data() } as Team);
+            }
+
+
+        } catch (error: any) {
+            console.error("Error ending retrospective from home page:", error);
+            toast({ title: "Completion Failed", description: error.message || "Could not complete the retrospective.", variant: "destructive" });
+        } finally {
+            setIsEndingRetro(false);
+        }
+    };
+
 
   if (isLoading || authLoading || !appUser) {
     console.log("[Render] Showing loading screen. isLoading:", isLoading, "authLoading:", authLoading, "appUser:", appUser ? appUser.id : 'none', "Active Team ID:", activeTeamId);
@@ -873,7 +1025,6 @@ function RetroSpectifyPageContent() {
 
   if (showTeamSelector && !isDemoMode && userTeams.length > 0) {
     console.log("[Render] Showing TeamSelector. User teams:", userTeams.length, "Active Team ID:", activeTeamId);
-    // TODO: Re-introduce TeamSelector component if needed, or inline the logic
     return (
         <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
              <header className="mb-8 flex justify-between items-center flex-wrap gap-4">
@@ -922,6 +1073,10 @@ function RetroSpectifyPageContent() {
   const canInteractWithCurrentTeam = !!activeTeamId && (isDemoMode || (appUser.teamIds || []).includes(activeTeamId));
   console.log(`[Render] Can interact with current team (${activeTeamId}):`, canInteractWithCurrentTeam, "isDemoMode:", isDemoMode);
   console.log(`[Render] Current appUser teamIds:`, appUser.teamIds, "Active Team ID:", activeTeamId);
+
+  // Determine if current user is the Scrum Master for the active team
+  const isCurrentUserScrumMaster = teamDetails?.scrumMasterUid === appUser.id;
+
 
   return (
     <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
@@ -1003,6 +1158,77 @@ function RetroSpectifyPageContent() {
                   )}
                 </CardContent>
               </Card>
+        )}
+
+         {/* Scrum Master Tools Section */}
+        {activeTeamId && !isDemoMode && teamDetails && (appUser.role === APP_ROLES.ADMIN || teamDetails.scrumMasterUid === appUser.id || teamDetails.owner === appUser.id) && (
+            <Card className="mb-6 shadow-md border-accent/30 bg-accent/5">
+                <CardHeader>
+                    <CardTitle className="text-lg font-semibold text-accent-foreground flex items-center">
+                        <Star className="mr-2 h-5 w-5 text-accent fill-current" /> Scrum Master Tools
+                    </CardTitle>
+                    <CardDescription>
+                        {teamDetails.scrumMasterUid === appUser.id ? "You are the current Scrum Master." : teamDetails.owner === appUser.id ? "As team owner, you can manage the retrospective." : "As an admin, you can manage the retrospective."}
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div>
+                        <Label htmlFor="nextScrumMaster" className="font-medium">Select Next Scrum Master</Label>
+                        <Select
+                            value={selectedNextScrumMasterUid || "none"}
+                            onValueChange={(value) => setSelectedNextScrumMasterUid(value === "none" ? null : value)}
+                            disabled={isEndingRetro || teamMembersForScrumMasterSelection.length === 0}
+                        >
+                            <SelectTrigger id="nextScrumMaster" className="w-full sm:w-[300px] mt-1">
+                                <SelectValue placeholder="Choose next Scrum Master..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="none">-- No specific selection (team decides/random) --</SelectItem>
+                                {teamMembersForScrumMasterSelection.map(member => (
+                                    <SelectItem key={member.id} value={member.id} disabled={member.id === teamDetails.scrumMasterUid}>
+                                        <div className="flex items-center gap-2">
+                                            <Avatar className="h-6 w-6">
+                                                <AvatarImage src={member.avatarUrl} alt={member.name} data-ai-hint="avatar profile picture"/>
+                                                <AvatarFallback>{member.name.charAt(0).toUpperCase()}</AvatarFallback>
+                                            </Avatar>
+                                            <span>{member.name} {member.id === teamDetails.scrumMasterUid && "(Current SM)"}</span>
+                                        </div>
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground mt-1">The selected user will be assigned as Scrum Master when the retrospective ends.</p>
+                    </div>
+                </CardContent>
+                 {selectedNextScrumMasterUid && (
+                    <CardFooter className="flex justify-end">
+                        <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                                <Button variant="destructive" disabled={isEndingRetro}>
+                                    {isEndingRetro ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                                    {isEndingRetro ? "Ending Retro..." : "End Retrospective & Assign SM"}
+                                </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Confirm End Retrospective</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        This will generate a report, email it to members, clear current data, and assign
+                                        <span className="font-semibold"> {teamMembersForScrumMasterSelection.find(m=>m.id === selectedNextScrumMasterUid)?.name || 'the selected user'} </span>
+                                        as the new Scrum Master. Are you sure?
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel onClick={() => setSelectedNextScrumMasterUid(null)} disabled={isEndingRetro}>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={handleEndRetrospectiveOnHomePage} disabled={isEndingRetro} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                        Yes, End Retrospective
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
+                    </CardFooter>
+                 )}
+            </Card>
         )}
 
 

@@ -22,7 +22,7 @@ import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
 import type { Team as TeamData, TeamMemberDisplay, TeamRole, User as AppUserType, RetroItem, PollResponse } from '@/lib/types'; // Import updated types
 import { TEAM_ROLES, APP_ROLES } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton component
-import { generateRetroReport } from '@/ai/flows/generate-retro-report'; // Import the new flow
+// generateRetroReport is no longer needed here, handled on main page.
 
 // Keep local definition for internal use, mapping directly to TeamMemberDisplay
 interface MemberDisplayInfo extends TeamMemberDisplay {}
@@ -45,7 +45,7 @@ function TeamPageContent() {
   const [isUpdatingScrumMaster, setIsUpdatingScrumMaster] = useState(false); // Track scrum master update
   const [error, setError] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null); // Specific error for invite form
-  const [isCompletingRetro, setIsCompletingRetro] = useState(false);
+  // isCompletingRetro state removed, handled on main page
 
 
   // State for editing team name
@@ -72,12 +72,12 @@ function TeamPageContent() {
   const currentUserTeamRole = teamData?.memberRoles?.[currentUser?.uid ?? ''] ?? null;
   const isOwner = currentUserTeamRole === TEAM_ROLES.OWNER;
   const isManager = currentUserTeamRole === TEAM_ROLES.MANAGER;
-  const isScrumMaster = teamData?.scrumMasterUid === currentUser?.uid;
+  // isScrumMaster no longer directly used for "Complete Retro" on this page
   const isAdmin = appUser?.role === APP_ROLES.ADMIN; // Use appUser for app-wide admin check
   const canManageTeamSettings = isOwner || isManager; // Owner or Manager can edit team name, assign scrum master
   const canManageMembers = isOwner || isManager; // Owner or Manager can invite/remove members
   const canChangeRoles = isOwner; // Only Owner can change roles
-  const canCompleteRetro = isAdmin || isScrumMaster || isOwner; // Admin, Scrum Master, or Owner
+  // canCompleteRetro removed, handled on main page
 
 
    const fetchTeamData = useCallback(async () => {
@@ -92,7 +92,7 @@ function TeamPageContent() {
                const data = teamDocSnap.data() as Omit<TeamData, 'id'>;
                 // Ensure memberRoles exists, default to empty object if not
                const memberRoles = data.memberRoles || {};
-               const membersList = data.members || [];
+               const membersList = Object.keys(memberRoles); // Get members from memberRoles keys
 
 
                 // Check if current user is a member before setting data
@@ -138,7 +138,6 @@ function TeamPageContent() {
             const membersData: MemberDisplayInfo[] = [];
             const chunkSize = 30; // Firestore 'in' query limit
 
-            // Fetch user data in chunks
             for (let i = 0; i < memberUids.length; i += chunkSize) {
                 const chunk = memberUids.slice(i, i + chunkSize);
                 if (chunk.length === 0) continue;
@@ -148,35 +147,31 @@ function TeamPageContent() {
                 querySnapshot.docs.forEach(docSnap => {
                     const data = docSnap.data();
                     const uid = data.uid;
-                     // Get role from teamData.memberRoles, default to MEMBER if somehow missing
                     const teamRole = teamData.memberRoles[uid] || TEAM_ROLES.MEMBER;
-                    const appRole = data.role || APP_ROLES.MEMBER; // Get app-wide role
+                    const appRole = data.role || APP_ROLES.MEMBER; 
 
                     membersData.push({
-                        id: uid, // Use uid as the primary ID
-                        uid: uid, // Keep uid for consistency if needed elsewhere
-                        email: data.email || 'unknown@example.com', // Fallback email
-                        name: data.displayName || data.email?.split('@')[0] || 'Unknown User', // Fallback name
-                        avatarUrl: data.avatarUrl || getGravatarUrl(data.email, 96)!, // Use stored avatar or generate Gravatar
-                        teamRole: teamRole, // Assign the fetched team-specific role
-                        role: appRole, // Assign app-wide role (from users collection)
+                        id: uid, 
+                        uid: uid, 
+                        email: data.email || 'unknown@example.com', 
+                        name: data.displayName || data.email?.split('@')[0] || 'Unknown User', 
+                        avatarUrl: data.avatarUrl || getGravatarUrl(data.email, 96)!, 
+                        teamRole: teamRole, 
+                        role: appRole, 
                     });
                 });
             }
 
-           // Create a map for quick lookup
            const memberMap = new Map(membersData.map(m => [m.uid, m]));
 
-           // Ensure all members listed in teamData.members are included, even if their user doc fetch failed
            const fullMemberList = teamData.members.map(uid => {
                const foundMember = memberMap.get(uid);
                if (foundMember) return foundMember;
 
-                // Handle case where user document wasn't found (or fetch failed)
                console.warn(`User data not found for UID: ${uid}. This user might not exist or there was a fetch error.`);
-               const fallbackEmail = `${uid}@unknown.invalid`; // Use a clearly invalid domain
-               const teamRole = teamData.memberRoles[uid] || TEAM_ROLES.MEMBER; // Still assign role
-               const appRole = APP_ROLES.MEMBER; // Default app role if user doc missing
+               const fallbackEmail = `${uid}@unknown.invalid`; 
+               const teamRole = teamData.memberRoles[uid] || TEAM_ROLES.MEMBER; 
+               const appRole = APP_ROLES.MEMBER; 
 
 
                 if (uid === currentUser?.uid) {
@@ -189,7 +184,7 @@ function TeamPageContent() {
                          name: 'Your User Data Missing!',
                          avatarUrl: getGravatarUrl(currentUser?.email || fallbackEmail, 96)!,
                          teamRole: teamRole,
-                         role: appRole, // This user's app role
+                         role: appRole, 
                      };
                 }
                 return {
@@ -199,12 +194,11 @@ function TeamPageContent() {
                     name: 'Unknown User (Data Missing)',
                     avatarUrl: getGravatarUrl(fallbackEmail, 96)!,
                     teamRole: teamRole,
-                    role: appRole, // Default app role
+                    role: appRole, 
                 };
            }).filter(member => member !== null) as MemberDisplayInfo[];
 
 
-           // Sort members: Owner first, then Manager, then Scrum Master (if applicable and not owner/manager), then alphabetically by name
            const scrumMasterUid = teamData.scrumMasterUid;
            fullMemberList.sort((a, b) => {
                const roleOrder = { [TEAM_ROLES.OWNER]: 1, [TEAM_ROLES.MANAGER]: 2, [TEAM_ROLES.MEMBER]: 4 };
@@ -215,7 +209,6 @@ function TeamPageContent() {
                let roleValA = roleOrder[a.teamRole];
                let roleValB = roleOrder[b.teamRole];
 
-               // If a member is also Scrum Master, give them priority (3) unless they are Owner/Manager
                if (isScrumMasterA && a.teamRole === TEAM_ROLES.MEMBER) roleValA = 3;
                if (isScrumMasterB && b.teamRole === TEAM_ROLES.MEMBER) roleValB = 3;
 
@@ -249,7 +242,6 @@ function TeamPageContent() {
          setLoadingTeam(false);
           router.push('/');
       } else if (!currentUser) {
-         // Handled by ProtectedRoute, but good to stop loading if no current user
          setLoadingTeam(false);
          setLoadingMembers(false);
       }
@@ -316,19 +308,15 @@ function TeamPageContent() {
         const querySnapshot = await getDocs(q);
 
         if (querySnapshot.empty) {
-            // User does not exist, add to pending and send invite
             const teamDocRef = doc(db, 'teams', teamData.id);
             await updateDoc(teamDocRef, {
                 pendingMemberEmails: arrayUnion(emailToInvite)
             });
 
             try {
-                 // Construct the signup URL with teamId and email
                 const signupUrl = `${window.location.origin}/signup?teamId=${teamData.id}&email=${encodeURIComponent(emailToInvite)}`;
-                // Firebase sendPasswordResetEmail can be used as an invite mechanism
-                // by providing a link to the signup page with pre-filled info.
                 await sendPasswordResetEmail(auth, emailToInvite, {
-                   url: signupUrl, // This URL will be in the email
+                   url: signupUrl, 
                    handleCodeInApp: false,
                 });
                  toast({
@@ -338,7 +326,7 @@ function TeamPageContent() {
                      duration: 7000
                  });
                  setInviteEmail('');
-                 await fetchTeamData(); // Refresh team data to show pending invite
+                 await fetchTeamData(); 
 
             } catch (emailError: any) {
                  console.error('Error sending invitation/password reset email:', emailError);
@@ -347,7 +335,6 @@ function TeamPageContent() {
                      description = 'Invalid email address format.';
                  } else if (emailError.code === 'auth/user-not-found'){
                      // This is expected if user doesn't exist, proceed with pending invite.
-                     // The previous toast for "Invitation Sent" is correct.
                  } else {
                     setInviteError(description);
                     toast({ title: 'Invite Failed', description: description, variant: 'destructive' });
@@ -358,7 +345,6 @@ function TeamPageContent() {
             return;
         }
 
-        // User exists, add them directly to the team
         const userDoc = querySnapshot.docs[0];
         const userId = userDoc.id;
         const userData = userDoc.data();
@@ -376,8 +362,8 @@ function TeamPageContent() {
 
         batch.update(teamDocRef, {
              members: arrayUnion(userId),
-             [`memberRoles.${userId}`]: TEAM_ROLES.MEMBER, // Assign default Member role
-             pendingMemberEmails: arrayRemove(emailToInvite) // Remove if they were pending
+             [`memberRoles.${userId}`]: TEAM_ROLES.MEMBER, 
+             pendingMemberEmails: arrayRemove(emailToInvite) 
         });
         batch.update(userDocRef, { teamIds: arrayUnion(teamData.id) });
 
@@ -526,93 +512,9 @@ function TeamPageContent() {
        }
    };
 
-    const handleCompleteRetrospective = async (nextScrumMasterUid: string | null) => {
-        if (!canCompleteRetro || !teamData || !currentUser) return;
+    // Removed handleCompleteRetrospective - this is now on the main page
 
-        setIsCompletingRetro(true);
-        toast({ title: "Processing Retrospective...", description: "Generating report and preparing emails." });
-
-        try {
-            // 1. Fetch all poll responses and retro items for this team
-            // These should be scoped to the activeTeamId from context
-            const currentTeamId = teamId; // teamId from useParams is the active one for this page
-            const pollResponsesColRef = collection(db, `teams/${currentTeamId}/pollResponses`);
-            const retroItemsColRef = collection(db, `teams/${currentTeamId}/retroItems`);
-
-            const pollResponsesSnapshot = await getDocs(pollResponsesColRef);
-            const pollResponsesData: PollResponse[] = pollResponsesSnapshot.docs.map(d => ({ id: d.id, ...d.data(), teamId: currentTeamId } as PollResponse));
-
-            const retroItemsSnapshot = await getDocs(retroItemsColRef);
-            const retroItemsData: RetroItem[] = retroItemsSnapshot.docs.map(d => ({ id: d.id, ...d.data(), teamId: currentTeamId } as RetroItem));
-
-
-            // 2. Generate the report
-            const reportInput: Parameters<typeof generateRetroReport>[0] = {
-                teamId: teamData.id,
-                teamName: teamData.name,
-                pollResponses: pollResponsesData,
-                retroItems: retroItemsData,
-                currentScrumMaster: teamMembers.find(m => m.uid === teamData.scrumMasterUid) || null,
-            };
-            // The generateRetroReport flow itself will determine the next SM based on participation if one isn't pre-selected.
-            // However, if the UI *allows* pre-selection, that should be passed.
-            // For now, the flow determines it.
-            const reportOutput = await generateRetroReport(reportInput);
-
-            // 3. Send email to all team members
-            const memberEmails = teamMembers.map(member => member.email).filter(email => !!email);
-            if (memberEmails.length > 0) {
-                await fetch('/api/send-email', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        to: memberEmails.join(','),
-                        subject: `Retrospective Report for ${teamData.name} - ${new Date().toLocaleDateString()}`,
-                        htmlBody: reportOutput.reportSummaryHtml,
-                    }),
-                });
-                toast({ title: "Report Emailed", description: "Retrospective summary sent to team members." });
-            }
-
-            // 4. Clear retro items and poll responses for THIS TEAM
-            const batch = writeBatch(db);
-            pollResponsesSnapshot.forEach(doc => batch.delete(doc.ref));
-            retroItemsSnapshot.forEach(doc => batch.delete(doc.ref));
-
-            // 5. Update/set the next Scrum Master
-            // If a scrum master was pre-selected via UI, use that. Otherwise, use the one from reportOutput.
-            const finalNextScrumMasterUid = nextScrumMasterUid ?? reportOutput.nextScrumMaster?.uid ?? null;
-
-            if (finalNextScrumMasterUid && finalNextScrumMasterUid !== teamData.scrumMasterUid) {
-                batch.update(doc(db, 'teams', teamData.id), {
-                    scrumMasterUid: finalNextScrumMasterUid
-                });
-                const smUser = teamMembers.find(m => m.uid === finalNextScrumMasterUid);
-                toast({ title: "Next Scrum Master Set", description: `${smUser ? smUser.name : 'Selected user'} is now the Scrum Master.` });
-            } else if (!finalNextScrumMasterUid && teamData.scrumMasterUid) {
-                // If no next SM and there was a current one, clear it
-                 batch.update(doc(db, 'teams', teamData.id), { scrumMasterUid: null });
-                 toast({ title: "Scrum Master Cleared", description: "Scrum Master assignment has been cleared." });
-            }
-
-
-            await batch.commit();
-            toast({ title: "Retrospective Data Cleared", description: "Items and votes for this team have been cleared."});
-
-
-            toast({ title: "Retrospective Completed!", description: "Report generated and process finished.", duration: 7000 });
-            await fetchTeamData(); // Refresh team data
-
-        } catch (error: any) {
-            console.error("Error completing retrospective:", error);
-            toast({ title: "Completion Failed", description: error.message || "Could not complete the retrospective.", variant: "destructive" });
-        } finally {
-            setIsCompletingRetro(false);
-        }
-    };
-
-
-  if (loadingTeam || !currentUser || !appUser) { // Add !appUser to condition
+  if (loadingTeam || !currentUser || !appUser) { 
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-16 w-16 animate-spin text-primary" />
@@ -639,8 +541,6 @@ function TeamPageContent() {
    }
 
   if (!teamData) {
-    // This case should ideally be covered by the error state or loading state.
-    // If it's reached, it means loading finished, no error, but teamData is still null.
     return <div className="flex items-center justify-center min-h-screen"><p>No team data available. You may not be a member of this team.</p></div>;
   }
 
@@ -696,36 +596,7 @@ function TeamPageContent() {
                </div>
            </div>
         </CardHeader>
-        {canCompleteRetro && (
-             <CardFooter className="border-t pt-4">
-                 <AlertDialog>
-                     <AlertDialogTrigger asChild>
-                        <Button variant="destructive" disabled={isCompletingRetro}>
-                            {isCompletingRetro ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                            {isCompletingRetro ? "Completing..." : "Complete Retrospective"}
-                        </Button>
-                     </AlertDialogTrigger>
-                     <AlertDialogContent>
-                         <AlertDialogHeader>
-                             <AlertDialogTitle>Confirm Retrospective Completion</AlertDialogTitle>
-                             <AlertDialogDescription>
-                                 This will generate a report, email it to all members, clear current retro data (poll votes, items), and suggest the next Scrum Master. This action cannot be undone for the current data.
-                             </AlertDialogDescription>
-                         </AlertDialogHeader>
-                         <AlertDialogFooter>
-                             <AlertDialogCancel disabled={isCompletingRetro}>Cancel</AlertDialogCancel>
-                             <AlertDialogAction 
-                                onClick={() => handleCompleteRetrospective(teamData.scrumMasterUid || null)} // Pass current SM if any, flow might re-assign
-                                disabled={isCompletingRetro} 
-                                className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-                             >
-                                 Yes, Complete Retrospective
-                             </AlertDialogAction>
-                         </AlertDialogFooter>
-                     </AlertDialogContent>
-                 </AlertDialog>
-             </CardFooter>
-        )}
+        {/* "Complete Retrospective" button removed from here */}
       </Card>
 
        <Card className="mb-8">
@@ -821,7 +692,6 @@ function TeamPageContent() {
                                                     <Users className="h-3 w-3 mr-1"/> Member
                                                 </span>
                                             )}
-                                            {/* Display App-wide Admin role if applicable and not owner/manager already */}
                                             {member.role === APP_ROLES.ADMIN && member.teamRole !== TEAM_ROLES.OWNER && member.teamRole !== TEAM_ROLES.MANAGER && (
                                                  <span className="text-red-600 dark:text-red-400 inline-flex items-center ml-2 pl-2 border-l border-border/50">
                                                      <ShieldCheck className="h-3 w-3 mr-1"/> Admin (App)
@@ -848,7 +718,6 @@ function TeamPageContent() {
                                               <SelectValue placeholder="Change role" />
                                           </SelectTrigger>
                                           <SelectContent>
-                                               {/* Allow assigning MANAGER or MEMBER roles. Owner is implicit. */}
                                                {[TEAM_ROLES.MANAGER, TEAM_ROLES.MEMBER].map(role => (
                                                    <SelectItem key={role} value={role} className="text-xs">
                                                        {role.charAt(0).toUpperCase() + role.slice(1)}
@@ -965,3 +834,4 @@ export default function TeamPage() {
         </ProtectedRoute>
     );
 }
+
