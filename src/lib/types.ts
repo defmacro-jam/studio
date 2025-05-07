@@ -83,7 +83,7 @@ export interface AdminUserDisplay extends User {
 // Global application configuration
 export interface GlobalConfig {
   id: 'global'; // Document ID, always 'global'
-  isDemoModeEnabled: boolean;
+  // isDemoModeEnabled: boolean; // Removed as per request
 }
 
 // Plain types for AI flow input, ensuring serializable timestamps

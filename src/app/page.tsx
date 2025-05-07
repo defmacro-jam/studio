@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link'; 
 import { signOut } from 'firebase/auth'; 
 import { Timestamp as FBTimestamp, doc, getDoc, onSnapshot, collection, query, where, addDoc, updateDoc, deleteDoc, serverTimestamp, writeBatch, getDocs as getFirestoreDocs, arrayUnion } from 'firebase/firestore'; 
-import type { RetroItem, PollResponse, User, Category, AppRole, GlobalConfig, Team, PlainPollResponse, PlainRetroItem } from '@/lib/types'; 
+import type { RetroItem, PollResponse, User, Category, AppRole, PlainPollResponse, PlainRetroItem, Team } from '@/lib/types'; 
 import { PollSection } from '@/components/retrospectify/PollSection';
 import { PollResultsSection } from '@/components/retrospectify/PollResultsSection';
 import { RetroSection } from '@/components/retrospectify/RetroSection';
@@ -40,7 +40,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 
-const mockTeamId = "mock-team-123"; 
+// mockTeamId removed
 
 function RetroSpectifyPageContent() {
   const { currentUser, loading: authLoading } = useAuth(); 
@@ -54,7 +54,7 @@ function RetroSpectifyPageContent() {
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [isAdjustRatingModalOpen, setIsAdjustRatingModalOpen] = useState(false);
   const [ratingAdjustmentProps, setRatingAdjustmentProps] = useState<{ itemIdToAdjust: string, currentRating: number; suggestedRating: number } | null>(null);
-  const [isDemoMode, setIsDemoMode] = useState(false);
+  // isDemoMode state removed
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [activeTeamName, setActiveTeamName] = useState<string | null>(null);
   const [userTeams, setUserTeams] = useState<Team[]>([]);
@@ -70,27 +70,7 @@ function RetroSpectifyPageContent() {
   console.log("[Page Lifecycle] RetroSpectifyPageContent rendering. Auth loading:", authLoading, "Current user:", currentUser ? currentUser.uid : 'none', "Active Team ID:", activeTeamId);
 
 
-  useEffect(() => {
-    console.log("[Effect] Setting up demo mode listener.");
-    const configDocRef = doc(db, 'config', 'global');
-    const unsubscribe = onSnapshot(configDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const configData = docSnap.data() as GlobalConfig;
-        console.log("[Effect] Demo mode config changed. Enabled:", configData.isDemoModeEnabled);
-        setIsDemoMode(configData.isDemoModeEnabled);
-      } else {
-        console.log("[Effect] Demo mode config not found, defaulting to false.");
-        setIsDemoMode(false); 
-      }
-    }, (error) => {
-      console.error("[Effect] Error listening to demo mode config:", error);
-      setIsDemoMode(false); 
-    });
-    return () => {
-      console.log("[Effect Cleanup] Demo mode listener unsubscribing.");
-      unsubscribe();
-    }
-  }, []);
+  // Demo mode listener removed
 
 
   useEffect(() => {
@@ -173,15 +153,10 @@ function RetroSpectifyPageContent() {
             }
           } else { 
             console.log("[Effect] User has no teams.");
-             if (!isDemoMode) {
-                setActiveTeamId(null);
-                setActiveTeamName(null);
-                setShowTeamSelector(false);
-             } else {
-                 setActiveTeamId(mockTeamId);
-                 setActiveTeamName("Mock Demo Team");
-                 setShowTeamSelector(false);
-             }
+            setActiveTeamId(null);
+            setActiveTeamName(null);
+            setShowTeamSelector(false);
+             // Removed demo mode specific logic for active team
           }
         } else {
           console.warn("[Effect] User document not found in Firestore for UID:", currentUser.uid, ". This may cause issues.");
@@ -196,13 +171,9 @@ function RetroSpectifyPageContent() {
           });
           setUserTeams([]);
           setShowTeamSelector(false);
-           if (isDemoMode) {
-                setActiveTeamId(mockTeamId);
-                setActiveTeamName("Mock Demo Team");
-           } else {
-                setActiveTeamId(null);
-                setActiveTeamName(null);
-           }
+          // Removed demo mode specific logic for active team
+          setActiveTeamId(null);
+          setActiveTeamName(null);
         }
       } catch (error) {
         console.error("[Effect] Error fetching user data or teams:", error);
@@ -215,11 +186,11 @@ function RetroSpectifyPageContent() {
 
     fetchInitialUserData();
 
-  }, [currentUser, authLoading, router, toast, isDemoMode]);
+  }, [currentUser, authLoading, router, toast]); // Removed isDemoMode dependency
 
 
   useEffect(() => {
-    if (!activeTeamId || (isDemoMode && activeTeamId === mockTeamId)) {
+    if (!activeTeamId) { // Removed demo mode check
       setTeamDetails(null);
       setTeamMembersForScrumMasterSelection([]);
       return;
@@ -276,11 +247,11 @@ function RetroSpectifyPageContent() {
     };
 
     fetchTeamAndMembers();
-  }, [activeTeamId, isDemoMode, toast]);
+  }, [activeTeamId, toast]); // Removed isDemoMode dependency
 
 
  useEffect(() => {
-    console.log(`[Effect] Dependency change for listeners. isDemoMode: ${isDemoMode}, activeTeamId: ${activeTeamId}, appUser: ${appUser ? appUser.id : 'null'}`);
+    console.log(`[Effect] Dependency change for listeners. activeTeamId: ${activeTeamId}, appUser: ${appUser ? appUser.id : 'null'}`);
     
     if (!activeTeamId || !appUser) {
       console.log("[Effect] No active REAL team or appUser, clearing retro/poll data. Active Team ID:", activeTeamId, "App User:", appUser ? appUser.id : 'none');
@@ -290,13 +261,7 @@ function RetroSpectifyPageContent() {
       return; 
     }
 
-    if (isDemoMode && activeTeamId === mockTeamId) {
-        console.log("[Effect] Demo mode active for mockTeamId. Listeners will not be set up for Firestore.");
-        setRetroItems([]); 
-        setPollResponses([]); 
-        setHasSubmitted(false); 
-        return; 
-    }
+    // Removed demo mode check for listeners
     
     console.log(`[Effect] Active team ID: ${activeTeamId}. Setting up listeners for retro items and poll responses.`);
 
@@ -353,15 +318,15 @@ function RetroSpectifyPageContent() {
         unsubscribeRetroItems();
         unsubscribePollResponses();
     };
-}, [activeTeamId, appUser, toast, isDemoMode]);
+}, [activeTeamId, appUser, toast]); // Removed isDemoMode dependency
 
 
   useEffect(() => {
-     if (!appUser || !activeTeamId || (isDemoMode && activeTeamId === mockTeamId)) return;
+     if (!appUser || !activeTeamId ) return; // Removed demo mode check
     const userResponseExists = pollResponses.some(resp => resp.author.id === appUser.id);
     setHasSubmitted(userResponseExists);
     console.log(`[Effect] Poll responses changed. User ${appUser.id} has submitted for team ${activeTeamId}:`, userResponseExists);
-  }, [pollResponses, appUser, activeTeamId, isDemoMode]);
+  }, [pollResponses, appUser, activeTeamId]); // Removed isDemoMode dependency
 
 
   const currentUserResponse = useMemo(() => {
@@ -386,8 +351,8 @@ function RetroSpectifyPageContent() {
 
 
   const removeExistingPollItems = useCallback(async (responseId: string) => {
-       if (!activeTeamId || (isDemoMode && activeTeamId === mockTeamId)) {
-           if (isDemoMode) toast({ title: "Demo Mode", description: "Skipping cleanup of previous items."});
+       if (!activeTeamId ) { // Removed demo mode check
+           // Removed demo mode toast
            return;
         }
        console.log(`[Callback] removeExistingPollItems for responseId ${responseId} in team ${activeTeamId}`);
@@ -405,7 +370,7 @@ function RetroSpectifyPageContent() {
         console.error(`[Callback] Error removing existing poll items from Firestore for responseId ${responseId}:`, error);
         toast({ title: "Error", description: "Could not clean up previous feedback items.", variant: "destructive" });
       }
-  }, [activeTeamId, toast, isDemoMode]);
+  }, [activeTeamId, toast]); // Removed isDemoMode dependency
 
 
   const processJustification = useCallback(async (rating: number, justification: string, responseId: string) => {
@@ -413,11 +378,7 @@ function RetroSpectifyPageContent() {
         console.warn("[Callback] processJustification: appUser or activeTeamId missing.");
         return;
       }
-      if (isDemoMode && activeTeamId === mockTeamId) {
-          console.log("[Callback] Demo mode: Skipping Firestore for processJustification.");
-          toast({ title: "Demo Mode", description: "Feedback processing simulated."});
-          return;
-      }
+      // Removed demo mode check
 
        console.log(`[Callback] processJustification for responseId ${responseId}, rating ${rating}, team ${activeTeamId}`);
        await removeExistingPollItems(responseId);
@@ -510,7 +471,7 @@ function RetroSpectifyPageContent() {
            });
            console.log(`[Callback] Added fallback 'discuss' item to Firestore due to AI error. ID: ${newItemRef.id}`);
       }
-  }, [appUser, activeTeamId, removeExistingPollItems, toast, isEditingPoll, isDemoMode, currentUserResponse]);
+  }, [appUser, activeTeamId, removeExistingPollItems, toast, isEditingPoll, currentUserResponse]); // Removed isDemoMode dependency
 
 
   const handlePollSubmit = useCallback(async (rating: number, justification: string) => {
@@ -520,13 +481,7 @@ function RetroSpectifyPageContent() {
      }
      console.log(`[Callback] handlePollSubmit for team ${activeTeamId}. Rating: ${rating}, Editing: ${isEditingPoll}`);
 
-      if (isDemoMode && activeTeamId === mockTeamId) {
-          console.log("[Callback] Demo mode: Simulating poll submit.");
-          toast({ title: "Demo Mode", description: "Poll submission simulated."});
-          setHasSubmitted(true); 
-          setIsEditingPoll(false);
-          return;
-      }
+      // Removed demo mode check
 
     let responseId: string;
 
@@ -555,7 +510,7 @@ function RetroSpectifyPageContent() {
     setHasSubmitted(true); 
     processJustification(rating, justification, responseId);
     setIsEditingPoll(false);
-  }, [appUser, activeTeamId, isEditingPoll, processJustification, toast, isDemoMode, currentUserResponse]); 
+  }, [appUser, activeTeamId, isEditingPoll, processJustification, toast, currentUserResponse]); // Removed isDemoMode dependency
 
   const handleEditPoll = useCallback(() => {
     console.log("[Callback] handleEditPoll triggered.");
@@ -575,11 +530,7 @@ function RetroSpectifyPageContent() {
         console.warn("[Callback] handleAddItem: appUser or activeTeamId missing.");
         return;
      }
-     if (isDemoMode && activeTeamId === mockTeamId) {
-         console.log(`[Callback] Demo mode: Simulating add item to ${category}.`);
-         toast({ title: "Demo Mode", description: `Item addition to ${category} simulated.`});
-         return;
-     }
+     // Removed demo mode check
 
      console.log(`[Callback] handleAddItem to category ${category} for team ${activeTeamId}. Content: ${content.substring(0,20)}...`);
     const newItemRef = await addDoc(collection(db, `teams/${activeTeamId}/retroItems`), {
@@ -596,18 +547,14 @@ function RetroSpectifyPageContent() {
         description: `Your item was added to "${category === 'discuss' ? 'Discussion Topics' : category === 'action' ? 'Action Items' : category === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`,
       });
     }
-  }, [appUser, activeTeamId, toast, isDemoMode]);
+  }, [appUser, activeTeamId, toast]); // Removed isDemoMode dependency
 
   const handleEditItem = useCallback(async (itemId: string, newContent: string) => {
     if (!appUser || !activeTeamId) {
         console.warn("[Callback] handleEditItem: appUser or activeTeamId missing.");
         return;
     }
-    if (isDemoMode && activeTeamId === mockTeamId) {
-        console.log(`[Callback] Demo mode: Simulating edit item ${itemId}.`);
-        toast({ title: "Demo Mode", description: `Item edit simulated for ${itemId}.`});
-        return;
-    }
+    // Removed demo mode check
 
     console.log(`[Callback] handleEditItem for item ${itemId}, new content: ${newContent.substring(0,20)}...`);
     const itemRef = doc(db, `teams/${activeTeamId}/retroItems`, itemId);
@@ -630,18 +577,14 @@ function RetroSpectifyPageContent() {
     });
     console.log(`[Callback] Updated retro item ${itemId} in Firestore.`);
     toast({ title: "Item Updated", description: "Changes saved." });
-  }, [appUser, activeTeamId, toast, isDemoMode]);
+  }, [appUser, activeTeamId, toast]); // Removed isDemoMode dependency
 
   const handleGenerateActionItem = useCallback(async (discussionItemId: string) => {
       if (!appUser || !activeTeamId) {
         console.warn("[Callback] handleGenerateActionItem: appUser or activeTeamId missing.");
         return;
       }
-      if (isDemoMode && activeTeamId === mockTeamId) {
-          console.log(`[Callback] Demo mode: Simulating generate action item from ${discussionItemId}.`);
-          toast({ title: "Demo Mode", description: `Action item generation simulated for ${discussionItemId}.`});
-          return;
-      }
+      // Removed demo mode check
       console.log(`[Callback] handleGenerateActionItem for discussion item ${discussionItemId} in team ${activeTeamId}`);
       const discussionItem = retroItems.find(item => item.id === discussionItemId);
       if (!discussionItem || discussionItem.category !== 'discuss') {
@@ -670,7 +613,7 @@ function RetroSpectifyPageContent() {
           console.error("[Callback] Error generating action item with AI:", error);
           toast({ title: "Action Item Generation Failed", description: "Could not generate an action item.", variant: "destructive" });
       }
-  }, [retroItems, appUser, activeTeamId, toast, isDemoMode]); 
+  }, [retroItems, appUser, activeTeamId, toast]); // Removed isDemoMode dependency
 
 
   const handleAddReply = useCallback(async (itemId: string, replyContent: string) => {
@@ -678,11 +621,7 @@ function RetroSpectifyPageContent() {
         console.warn("[Callback] handleAddReply: appUser or activeTeamId missing.");
         return;
      }
-     if (isDemoMode && activeTeamId === mockTeamId) {
-         console.log(`[Callback] Demo mode: Simulating add reply to ${itemId}.`);
-         toast({ title: "Demo Mode", description: `Reply simulation for item ${itemId}.`});
-         return;
-     }
+     // Removed demo mode check
      console.log(`[Callback] handleAddReply to item ${itemId} in team ${activeTeamId}. Reply: ${replyContent.substring(0,20)}...`);
     const itemRef = doc(db, `teams/${activeTeamId}/retroItems`, itemId);
     const itemDoc = await getDoc(itemRef);
@@ -697,7 +636,7 @@ function RetroSpectifyPageContent() {
       id: newReplyId, 
       author: { id: appUser.id, name: appUser.name, email: appUser.email, avatarUrl: appUser.avatarUrl, role: appUser.role },
       content: replyContent,
-      timestamp: new Date().toISOString(), // Use ISO string for server actions; Firestore will convert to Timestamp
+      timestamp: new Date().toISOString(), 
       isFromPoll: false, 
       category: parentItemData.category,
     };
@@ -706,10 +645,10 @@ function RetroSpectifyPageContent() {
     });
     console.log(`[Callback] Added reply to item ${itemId} in Firestore.`);
     toast({ title: "Reply Added" });
-  }, [appUser, activeTeamId, toast, isDemoMode]);
+  }, [appUser, activeTeamId, toast]); // Removed isDemoMode dependency
 
   const handleEditReply = useCallback(async (itemId: string, replyId: string, newContent: string) => {
-    if (!appUser || !activeTeamId || (isDemoMode && activeTeamId === mockTeamId)) {
+    if (!appUser || !activeTeamId ) { // Removed demo mode check
         toast({ title: "Error", description: "Cannot edit reply in this state.", variant: "destructive" });
         return;
     }
@@ -746,10 +685,10 @@ function RetroSpectifyPageContent() {
 
     await updateDoc(itemRef, { replies: updatedReplies });
     toast({ title: "Reply Updated" });
-}, [appUser, activeTeamId, toast, isDemoMode]);
+}, [appUser, activeTeamId, toast]); // Removed isDemoMode dependency
 
 const handleDeleteReply = useCallback(async (itemId: string, replyId: string) => {
-    if (!appUser || !activeTeamId || (isDemoMode && activeTeamId === mockTeamId)) {
+    if (!appUser || !activeTeamId ) { // Removed demo mode check
         toast({ title: "Error", description: "Cannot delete reply in this state.", variant: "destructive" });
         return;
     }
@@ -781,7 +720,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
     const updatedReplies = currentReplies.filter(reply => reply.id !== replyId);
     await updateDoc(itemRef, { replies: updatedReplies });
     toast({ title: "Reply Deleted" });
-}, [appUser, activeTeamId, toast, isDemoMode]);
+}, [appUser, activeTeamId, toast]); // Removed isDemoMode dependency
 
 
    const handleDeleteItem = useCallback(async (itemId: string) => {
@@ -789,11 +728,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
         console.warn("[Callback] handleDeleteItem: appUser or activeTeamId missing.");
         return;
      }
-     if (isDemoMode && activeTeamId === mockTeamId) {
-         console.log(`[Callback] Demo mode: Simulating delete item ${itemId}.`);
-         toast({ title: "Demo Mode", description: `Item deletion simulated for ${itemId}.`});
-         return;
-     }
+     // Removed demo mode check
      console.log(`[Callback] handleDeleteItem ${itemId} in team ${activeTeamId}`);
      const itemRef = doc(db, `teams/${activeTeamId}/retroItems`, itemId);
      const itemDoc = await getDoc(itemRef);
@@ -814,7 +749,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
      await deleteDoc(itemRef);
      console.log(`[Callback] Deleted retro item ${itemId} from Firestore.`);
     toast({ title: "Item Deleted", variant: "default" }); 
-   }, [appUser, activeTeamId, isEditingPoll, toast, isDemoMode]);
+   }, [appUser, activeTeamId, isEditingPoll, toast]); // Removed isDemoMode dependency
 
 
    const handleDragStart = useCallback((itemId: string) => {
@@ -839,12 +774,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
              console.warn("[Callback] handleMoveItem: appUser or activeTeamId missing.");
              return;
         }
-         if (isDemoMode && activeTeamId === mockTeamId) {
-            console.log(`[Callback] Demo mode: Simulating move item ${itemId} to ${targetCategory}.`);
-            toast({ title: "Demo Mode", description: `Item move to ${targetCategory} simulated.`});
-             setDraggingItemId(null);
-             return;
-        }
+         // Removed demo mode check
         console.log(`[Callback] handleMoveItem ${itemId} to category ${targetCategory} in team ${activeTeamId}`);
         const itemToMove = retroItems.find(item => item.id === itemId);
         if (!itemToMove) {
@@ -899,7 +829,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
              }
          }
          setDraggingItemId(null);
-    }, [appUser, activeTeamId, retroItems, pollResponses, toast, handleGenerateActionItem, isDemoMode]); 
+    }, [appUser, activeTeamId, retroItems, pollResponses, toast, handleGenerateActionItem]); // Removed isDemoMode dependency
 
 
     const handleAdjustRatingConfirm = useCallback(async (newRating: number) => {
@@ -909,13 +839,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
              setRatingAdjustmentProps(null);
              return;
         }
-        if (isDemoMode && activeTeamId === mockTeamId) {
-            console.log(`[Callback] Demo mode: Simulating adjust rating to ${newRating}.`);
-            toast({ title: "Demo Mode", description: "Rating adjustment simulated."});
-            setIsAdjustRatingModalOpen(false);
-            setRatingAdjustmentProps(null);
-            return;
-        }
+        // Removed demo mode check
         console.log(`[Callback] handleAdjustRatingConfirm for team ${activeTeamId}. New rating: ${newRating}`);
         const responseDocRef = doc(db, `teams/${activeTeamId}/pollResponses`, currentUserResponse.id);
         await updateDoc(responseDocRef, {
@@ -926,7 +850,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
         toast({ title: "Rating Adjusted", description: `Your sentiment rating updated to ${newRating} stars.` });
         setIsAdjustRatingModalOpen(false);
         setRatingAdjustmentProps(null);
-    }, [currentUserResponse, appUser, activeTeamId, toast, isDemoMode]);
+    }, [currentUserResponse, appUser, activeTeamId, toast]); // Removed isDemoMode dependency
 
     const handleAdjustRatingCancel = useCallback(() => {
          console.log("[Callback] handleAdjustRatingCancel.");
@@ -1127,7 +1051,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
     );
   }
 
-  if (showTeamSelector && !isDemoMode && userTeams.length > 0) {
+  if (showTeamSelector && userTeams.length > 0) { // Removed demo mode check
     console.log("[Render] Showing TeamSelector. User teams:", userTeams.length, "Active Team ID:", activeTeamId);
     return (
         <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
@@ -1174,8 +1098,8 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
   }
 
 
-  const canInteractWithCurrentTeam = !!activeTeamId && (isDemoMode || (appUser.teamIds || []).includes(activeTeamId));
-  console.log(`[Render] Can interact with current team (${activeTeamId}):`, canInteractWithCurrentTeam, "isDemoMode:", isDemoMode);
+  const canInteractWithCurrentTeam = !!activeTeamId && ((appUser.teamIds || []).includes(activeTeamId)); // Removed demo mode check
+  console.log(`[Render] Can interact with current team (${activeTeamId}):`, canInteractWithCurrentTeam); // Removed isDemoMode log
   console.log(`[Render] Current appUser teamIds:`, appUser.teamIds, "Active Team ID:", activeTeamId);
 
   const isCurrentUserScrumMaster = teamDetails?.scrumMasterUid === appUser.id;
@@ -1189,19 +1113,19 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
                 {activeTeamName && <span className="text-xl text-muted-foreground">({activeTeamName})</span>}
             </div>
             <div className="flex items-center space-x-3">
-                 {userTeams.length > 1 && activeTeamId && !isDemoMode && (
+                 {userTeams.length > 1 && activeTeamId && ( // Removed demo mode check
                      <Button variant="outline" size="sm" onClick={handleChangeTeam}>
                          <PackageSearch className="mr-2 h-4 w-4" /> Change Team
                      </Button>
                  )}
-                  {appUser.role === APP_ROLES.ADMIN || (userTeams.length > 0 && !isDemoMode )? ( 
+                  {appUser.role === APP_ROLES.ADMIN || (userTeams.length > 0 )? ( // Removed demo mode check
                      <Link href="/teams" passHref>
                          <Button variant="outline" size="sm">
                              <Users className="mr-2 h-4 w-4" /> My Teams
                          </Button>
                      </Link>
                   ) : null}
-                 {appUser.role === APP_ROLES.ADMIN && !isDemoMode && (
+                 {appUser.role === APP_ROLES.ADMIN && ( // Removed demo mode check
                      <Link href="/admin" passHref>
                          <Button variant="outline" size="sm">
                              <ShieldCheck className="mr-2 h-4 w-4" /> Admin
@@ -1223,23 +1147,9 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
             </div>
         </header>
 
-        {isDemoMode && activeTeamId === mockTeamId && (
-          <Card className="mb-6 bg-yellow-50 border-yellow-300">
-            <CardHeader>
-              <CardTitle className="text-yellow-700 flex items-center">
-                <Info className="mr-2 h-5 w-5" /> Demo Mode Active
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-yellow-600">
-                You are currently in Demo Mode using a mock team. Data shown is for demonstration purposes and will not persist.
-                Real team functionalities are simulated.
-              </p>
-            </CardContent>
-          </Card>
-        )}
+        {/* Demo mode info card removed */}
 
-        {!activeTeamId && !isLoading && !isDemoMode && userTeams.length === 0 && (
+        {!activeTeamId && !isLoading && userTeams.length === 0 && ( // Removed demo mode check
              <Card className="mt-8 shadow-lg border-primary/20 bg-primary/5">
                 <CardHeader>
                   <CardTitle className="text-xl font-semibold text-primary flex items-center">
@@ -1263,7 +1173,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
               </Card>
         )}
 
-        {activeTeamId && !isDemoMode && teamDetails && (appUser.role === APP_ROLES.ADMIN || teamDetails.scrumMasterUid === appUser.id || teamDetails.owner === appUser.id) && (
+        {activeTeamId && teamDetails && (appUser.role === APP_ROLES.ADMIN || teamDetails.scrumMasterUid === appUser.id || teamDetails.owner === appUser.id) && ( // Removed demo mode check
             <Accordion type="single" collapsible className="w-full mb-6" defaultValue='scrum-master-tools'>
                 <AccordionItem value="scrum-master-tools" className="border-b-0">
                     <Card className="shadow-md border-accent/30 bg-accent/5">
@@ -1469,6 +1379,7 @@ export default function RetroSpectifyPage() {
         </ProtectedRoute>
     );
 }
+
 
 
 

@@ -8,7 +8,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+// Switch removed as demo mode is removed
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Save, ArrowLeft, Settings as SettingsIcon, ShieldAlert } from 'lucide-react';
@@ -24,7 +24,7 @@ function AdminSettingsPageContent() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const [isDemoMode, setIsDemoMode] = useState(false);
+  // isDemoMode state removed
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +61,7 @@ function AdminSettingsPageContent() {
     }
   }, [currentUser, authLoading, router, toast]);
 
-  // Fetch current demo mode setting
+  // Fetch current settings (if any remain)
   useEffect(() => {
     if (isAdmin !== true) return; // Only fetch if confirmed admin
 
@@ -72,12 +72,11 @@ function AdminSettingsPageContent() {
         const configDocRef = doc(db, CONFIG_COLLECTION, GLOBAL_CONFIG_DOC_ID);
         const docSnap = await getDoc(configDocRef);
         if (docSnap.exists()) {
-          const configData = docSnap.data() as GlobalConfig;
-          setIsDemoMode(configData.isDemoModeEnabled);
+          // const configData = docSnap.data() as GlobalConfig;
+          // Removed isDemoMode logic
         } else {
-          // If config doc doesn't exist, assume demo mode is off and create it
-          await setDoc(configDocRef, { isDemoModeEnabled: false });
-          setIsDemoMode(false);
+          // If config doc doesn't exist, create it with default values if any
+           await setDoc(configDocRef, { /* other default settings if any */ });
         }
       } catch (err) {
         console.error("Error fetching app settings:", err);
@@ -102,11 +101,12 @@ function AdminSettingsPageContent() {
     try {
       const configDocRef = doc(db, CONFIG_COLLECTION, GLOBAL_CONFIG_DOC_ID);
       await updateDoc(configDocRef, {
-        isDemoModeEnabled: isDemoMode,
+        // Removed isDemoMode update
+        // Add other settings to update here if any
       });
       toast({
         title: "Settings Saved",
-        description: `Demo mode is now ${isDemoMode ? 'ENABLED' : 'DISABLED'}.`,
+        description: "Application settings have been updated.", // Generic message
       });
       router.push('/'); // Redirect to home page after successful save
     } catch (err) {
@@ -128,6 +128,7 @@ function AdminSettingsPageContent() {
             <Skeleton className="h-4 w-64" /> {/* Description placeholder */}
           </CardHeader>
           <CardContent className="space-y-6 pt-8">
+            {/* Placeholder for any remaining settings */}
             <div className="flex items-center justify-between">
               <Skeleton className="h-6 w-32" />
               <Skeleton className="h-6 w-12 rounded-full" />
@@ -180,21 +181,8 @@ function AdminSettingsPageContent() {
         </CardHeader>
         <form onSubmit={handleSaveSettings}>
           <CardContent className="space-y-6 pt-8">
-            <div className="flex items-center justify-between space-x-2 p-4 border rounded-lg">
-              <Label htmlFor="demo-mode" className="flex flex-col space-y-1">
-                <span className="font-medium">Enable Demo Mode</span>
-                <span className="text-xs font-normal leading-snug text-muted-foreground">
-                  When enabled, mock users and data will be shown for demonstration purposes.
-                </span>
-              </Label>
-              <Switch
-                id="demo-mode"
-                checked={isDemoMode}
-                onCheckedChange={setIsDemoMode}
-                disabled={isSaving}
-                aria-label="Toggle demo mode"
-              />
-            </div>
+            {/* Demo mode switch and label removed */}
+             <p className="text-muted-foreground text-center">No application-wide settings are currently available to configure.</p>
             {error && <p className="text-sm text-destructive">{error}</p>}
           </CardContent>
           <CardFooter className="flex justify-end">
