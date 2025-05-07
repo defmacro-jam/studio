@@ -12,6 +12,7 @@ import { cn, getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
 import type { Timestamp as FBTimestamp } from 'firebase/firestore';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import * as React from 'react';
 
 
 interface RetroItemCardProps {
@@ -89,7 +90,8 @@ export function RetroItemCard({
    // OR if the item is a poll-generated item authored by someone else (users should reply to their own poll items or discussion topics)
    const allowReply = !(
     (isAuthor && !item.isFromPoll && (item.category === 'well' || item.category === 'improve')) ||
-    item.category === 'action'
+    item.category === 'action' ||
+    (item.isFromPoll && !isAuthor)
   );
 
 
@@ -142,7 +144,12 @@ export function RetroItemCard({
             console.warn("Invalid timestamp format in RetroItemCard:", timestamp);
             return 'unknown time'; // Fallback for unexpected format
         }
-        return formatDistanceToNow(dateToFormat, { addSuffix: true });
+        try {
+            return formatDistanceToNow(dateToFormat, { addSuffix: true });
+        } catch (error) {
+            console.error("Error formatting date in RetroItemCard:", error, "Date to format:", dateToFormat);
+            return 'unknown time';
+        }
     };
 
 
