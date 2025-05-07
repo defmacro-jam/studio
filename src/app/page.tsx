@@ -1153,7 +1153,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
         )}
 
         {activeTeamId && teamDetails && (appUser.role === APP_ROLES.ADMIN || teamDetails.scrumMasterUid === appUser.id || teamDetails.owner === appUser.id) && (
-            <Accordion type="single" collapsible className="w-full mb-6" defaultValue='scrum-master-tools'>
+            <Accordion type="single" collapsible className="w-full mb-6">
                 <AccordionItem value="scrum-master-tools" className="border-b-0">
                     <Card className="shadow-md border-accent/30 bg-accent/5">
                          <CardHeader className="pb-2 pt-4 px-6">
@@ -1377,3 +1377,4 @@ export default function RetroSpectifyPage() {
         </ProtectedRoute>
     );
 }
+
