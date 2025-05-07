@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, type DragEvent } from 'react';
@@ -24,6 +25,7 @@ import { useAuth } from '@/context/AuthContext'; // Import useAuth
 import { auth, db } from '@/lib/firebase'; // Import auth and db
 import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
 import { APP_ROLES, TEAM_ROLES } from '@/lib/types'; // Import APP_ROLES
+// import { TeamSelector } from '@/components/retrospectify/TeamSelector'; // Removed as TeamSelector file was deleted
 
 
 const mockTeamId = "mock-team-123"; // Define a mock team ID for demo data
@@ -229,8 +231,10 @@ function RetroSpectifyPageContent() {
     console.log(`[Effect] Active team ID: ${activeTeamId}. Setting up listeners for retro items and poll responses.`);
 
     // Listener for Retro Items
-    const retroItemsQuery = query(collection(db, `teams/${activeTeamId}/retroItems`));
-    const unsubscribeRetroItems = onSnapshot(retroItemsQuery, (snapshot) => {
+    const retroItemsCollectionRef = collection(db, `teams/${activeTeamId}/retroItems`);
+    const retroItemsQueryRef = query(retroItemsCollectionRef); // No specific where clauses needed here, just listen to the collection
+
+    const unsubscribeRetroItems = onSnapshot(retroItemsQueryRef, (snapshot) => {
         const items: RetroItem[] = [];
         snapshot.forEach(doc => {
             const data = doc.data();
@@ -253,8 +257,10 @@ function RetroSpectifyPageContent() {
     });
 
     // Listener for Poll Responses
-    const pollResponsesQuery = query(collection(db, `teams/${activeTeamId}/pollResponses`));
-    const unsubscribePollResponses = onSnapshot(pollResponsesQuery, (snapshot) => {
+    const pollResponsesCollectionRef = collection(db, `teams/${activeTeamId}/pollResponses`);
+    const pollResponsesQueryRef = query(pollResponsesCollectionRef); // Listen to the collection
+
+    const unsubscribePollResponses = onSnapshot(pollResponsesQueryRef, (snapshot) => {
         const responses: PollResponse[] = [];
         snapshot.forEach(doc => {
             const data = doc.data();
@@ -500,7 +506,8 @@ function RetroSpectifyPageContent() {
   }, [toast]);
 
 
-  const handleAddItem = useCallback(async (category: Category) => async (content: string) => {
+  const handleAddItem = useCallback((category: Category) => {
+    return async (content: string) => {
      if (!appUser || !activeTeamId) {
         console.warn("[Callback] handleAddItem: appUser or activeTeamId missing.");
         return;
@@ -525,6 +532,7 @@ function RetroSpectifyPageContent() {
         title: "Item Added",
         description: `Your item was added to "${category === 'discuss' ? 'Discussion Topics' : category === 'action' ? 'Action Items' : category === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`,
       });
+    }
   }, [appUser, activeTeamId, toast, isDemoMode]);
 
   const handleEditItem = useCallback(async (itemId: string, newContent: string) => {
@@ -865,6 +873,7 @@ function RetroSpectifyPageContent() {
 
   if (showTeamSelector && !isDemoMode && userTeams.length > 0) {
     console.log("[Render] Showing TeamSelector. User teams:", userTeams.length, "Active Team ID:", activeTeamId);
+    // TODO: Re-introduce TeamSelector component if needed, or inline the logic
     return (
         <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
              <header className="mb-8 flex justify-between items-center flex-wrap gap-4">
