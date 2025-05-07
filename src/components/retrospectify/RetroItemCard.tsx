@@ -1,13 +1,18 @@
 
-import type { RetroItem, User } from '@/lib/types';
+
+import type { RetroItem, User, Category } from '@/lib/types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useState, type FormEvent, type DragEvent, useEffect } from 'react';
 import { MessageSquare, Trash2, Edit, Save, X } from 'lucide-react'; // Added Edit, Save, X icons
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, parseISO } from 'date-fns';
 import { cn, getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
+import type { Timestamp as FBTimestamp } from 'firebase/firestore';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
 
 interface RetroItemCardProps {
   item: RetroItem;
@@ -15,7 +20,7 @@ interface RetroItemCardProps {
   onAddReply: (itemId: string, replyContent: string) => void;
   onEditItem?: (itemId: string, newContent: string) => void; // Optional edit handler
   onDeleteItem?: (itemId: string) => void; // Optional delete handler
-  onDragStartItem: (itemId: string) => void; // Callback for drag start - REQUIRED
+  onDragStartItem: (itemId: string, originalCategory: Category) => void; // Updated to include original category
   onDragEndItem: () => void; // Callback for drag end - REQUIRED
   isDragging?: boolean; // Optional prop to style when dragging
 }
@@ -80,11 +85,13 @@ export function RetroItemCard({
   const canEdit = onEditItem && canModify;
 
    // Allow replies on items UNLESS it's a manually added ('well' or 'improve') item belonging to the current user.
+   // OR if the item itself is an action item (actions typically don't need replies)
+   // OR if the item is a poll-generated item authored by someone else (users should reply to their own poll items or discussion topics)
    const allowReply = !(
-     isAuthor &&
-     !item.isFromPoll &&
-     (item.category === 'well' || item.category === 'improve')
-   );
+    (isAuthor && !item.isFromPoll && (item.category === 'well' || item.category === 'improve')) ||
+    item.category === 'action'
+  );
+
 
   // Allow the current user to drag their own items OR admin to drag any item.
   const isDraggable = isAuthor || isAdmin;
@@ -100,7 +107,7 @@ export function RetroItemCard({
     e.dataTransfer.effectAllowed = "move";
 
     if (typeof onDragStartItem === 'function') {
-      onDragStartItem(item.id); // Notify parent component
+      onDragStartItem(item.id, item.category); // Notify parent component
     } else {
       console.error("onDragStartItem is not a function in RetroItemCard");
     }
@@ -119,6 +126,25 @@ export function RetroItemCard({
    // Ensure avatar URLs are valid, fallback to Gravatar if needed
    const itemAuthorAvatarUrl = item.author.avatarUrl || getGravatarUrl(item.author.email, 80)!;
    const currentUserAvatarUrl = currentUser.avatarUrl || getGravatarUrl(currentUser.email, 80)!;
+
+    const getFormattedTimestamp = (timestamp: FBTimestamp | Date | string): string => {
+        if (!timestamp) return 'just now'; // Fallback for null/undefined
+        let dateToFormat: Date;
+
+        if (timestamp instanceof Date) {
+            dateToFormat = timestamp;
+        } else if (typeof timestamp === 'string') {
+            dateToFormat = parseISO(timestamp); // Assuming ISO string if it's a string
+        } else if (timestamp && typeof (timestamp as FBTimestamp).toDate === 'function') {
+            // Check if it's a Firestore Timestamp-like object (has a toDate method)
+            dateToFormat = (timestamp as FBTimestamp).toDate();
+        } else {
+            console.warn("Invalid timestamp format in RetroItemCard:", timestamp);
+            return 'unknown time'; // Fallback for unexpected format
+        }
+        return formatDistanceToNow(dateToFormat, { addSuffix: true });
+    };
+
 
 
   return (
@@ -145,7 +171,7 @@ export function RetroItemCard({
           <div className="overflow-hidden">
             <p className="text-sm font-medium leading-none truncate">{item.author.name}</p>
             <p className="text-xs text-muted-foreground">
-              {formatDistanceToNow(item.timestamp, { addSuffix: true })}
+              {getFormattedTimestamp(item.timestamp)}
             </p>
           </div>
         </div>
@@ -195,12 +221,12 @@ export function RetroItemCard({
                  </div>
             </div>
          ) : (
-            <>
-                <p className="text-sm whitespace-pre-wrap break-words">{item.content}</p>
-                {item.isFromPoll && (
-                    <p className="text-xs text-muted-foreground/70 italic mt-1">(From sentiment poll)</p>
-                )}
-            </>
+            <div className="prose prose-sm dark:prose-invert max-w-none break-words">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.content}</ReactMarkdown>
+              {item.isFromPoll && (
+                  <p className="text-xs text-muted-foreground/70 italic mt-1">(From sentiment poll)</p>
+              )}
+            </div>
          )}
       </CardContent>
 
@@ -228,11 +254,11 @@ export function RetroItemCard({
                                     <AvatarImage src={replyAuthorAvatarUrl} alt={reply.author.name} data-ai-hint="avatar profile picture" />
                                     <AvatarFallback>{reply.author.name.charAt(0).toUpperCase()}</AvatarFallback>
                                 </Avatar>
-                                <div>
+                                <div className="prose prose-xs dark:prose-invert max-w-none break-words">
                                     <span className="font-medium">{reply.author.name}: </span>
-                                    <span className="whitespace-pre-wrap break-words">{reply.content}</span>
-                                    <p className="text-muted-foreground text-[10px]">
-                                    {formatDistanceToNow(reply.timestamp, { addSuffix: true })}
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ p: React.Fragment }}>{reply.content}</ReactMarkdown>
+                                    <p className="text-muted-foreground text-[10px] not-prose">
+                                      {getFormattedTimestamp(reply.timestamp)}
                                     </p>
                                 </div>
                                 </div>
@@ -275,11 +301,11 @@ export function RetroItemCard({
                                         <AvatarImage src={replyAuthorAvatarUrl} alt={reply.author.name} data-ai-hint="avatar profile picture" />
                                         <AvatarFallback>{reply.author.name.charAt(0).toUpperCase()}</AvatarFallback>
                                     </Avatar>
-                                    <div>
+                                    <div className="prose prose-xs dark:prose-invert max-w-none break-words">
                                         <span className="font-medium">{reply.author.name}: </span>
-                                        <span className="whitespace-pre-wrap break-words">{reply.content}</span>
-                                        <p className="text-muted-foreground text-[10px]">
-                                        {formatDistanceToNow(reply.timestamp, { addSuffix: true })}
+                                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ p: React.Fragment }}>{reply.content}</ReactMarkdown>
+                                        <p className="text-muted-foreground text-[10px] not-prose">
+                                          {getFormattedTimestamp(reply.timestamp)}
                                         </p>
                                     </div>
                                 </div>
@@ -293,3 +319,4 @@ export function RetroItemCard({
     </Card>
   );
 }
+

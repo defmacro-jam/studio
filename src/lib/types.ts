@@ -1,4 +1,5 @@
 
+
 import type { Timestamp } from 'firebase/firestore'; // Import Timestamp
 
 export type Category = 'well' | 'improve' | 'discuss' | 'action';
@@ -35,7 +36,7 @@ export interface RetroItem {
   id: string;
   author: User; // Use the updated User type
   content: string;
-  timestamp: Date | Timestamp; // Allow Firestore Timestamp
+  timestamp: Date | Timestamp | string; // Allow Firestore Timestamp, Date, or string for replies
   replies?: RetroItem[]; // Optional for replies
   category: Category; // Category is required
   isFromPoll?: boolean; // Optional flag
@@ -49,7 +50,7 @@ export interface PollResponse {
   author: User; // Use the updated User type
   rating: number;
   justification: string;
-  timestamp: Date | Timestamp; // Allow Firestore Timestamp
+  timestamp: Date | Timestamp | string; // Allow Firestore Timestamp, Date or string
   teamId?: string; // Added teamId for scoping
 }
 
@@ -91,6 +92,7 @@ export interface GenerateRetroReportInput {
     pollResponses: PollResponse[];
     retroItems: RetroItem[];
     currentScrumMaster?: User | null; // This User type is the generic one
+    nextScrumMaster?: User | null; // Added this to pass explicitly
 }
 
 export interface GenerateRetroReportOutput {
@@ -105,3 +107,4 @@ export interface ActiveTeamContextType {
   teamName: string | null;
   setTeamName: (name: string | null) => void;
 }
+

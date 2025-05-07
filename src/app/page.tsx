@@ -6,7 +6,7 @@ import { useState, useEffect, useMemo, useCallback, type DragEvent } from 'react
 import { useRouter } from 'next/navigation'; // Import useRouter
 import Link from 'next/link'; // Import Link
 import { signOut } from 'firebase/auth'; // Import signOut
-import { Timestamp as FBTimestamp, doc, getDoc, onSnapshot, collection, query, where, addDoc, updateDoc, deleteDoc, serverTimestamp, writeBatch, getDocs as getFirestoreDocs } from 'firebase/firestore'; // Renamed getDocs to getFirestoreDocs, added FBTimestamp
+import { Timestamp as FBTimestamp, doc, getDoc, onSnapshot, collection, query, where, addDoc, updateDoc, deleteDoc, serverTimestamp, writeBatch, getDocs as getFirestoreDocs, arrayUnion } from 'firebase/firestore'; // Renamed getDocs to getFirestoreDocs, added FBTimestamp, arrayUnion
 import type { RetroItem, PollResponse, User, Category, AppRole, GlobalConfig, Team } from '@/lib/types'; // Added AppRole, GlobalConfig
 import { PollSection } from '@/components/retrospectify/PollSection';
 import { PollResultsSection } from '@/components/retrospectify/PollResultsSection';
@@ -36,6 +36,8 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 
 const mockTeamId = "mock-team-123"; // Define a mock team ID for demo data
@@ -580,7 +582,7 @@ function RetroSpectifyPageContent() {
   }, [toast]);
 
 
-  const handleAddItem = useCallback((category: Category) => {
+  const handleAddItem = useCallback(async (category: Category) => {
     return async (content: string) => {
      if (!appUser || !activeTeamId) {
         console.warn("[Callback] handleAddItem: appUser or activeTeamId missing.");
@@ -704,16 +706,17 @@ function RetroSpectifyPageContent() {
     const parentItemData = itemDoc.data();
     const newReplyId = doc(collection(db, `teams/${activeTeamId}/retroItems`)).id; 
 
-    const newReply: Omit<RetroItem, 'teamId' | 'id'> & { id: string; timestamp: any} = { 
+    const newReplyObjectForArray = { 
       id: newReplyId, 
       author: { id: appUser.id, name: appUser.name, email: appUser.email, avatarUrl: appUser.avatarUrl, role: appUser.role },
       content: replyContent,
-      timestamp: serverTimestamp(), 
+      timestamp: new Date(), // Use client-side Date to avoid serverTimestamp in array issue
       isFromPoll: false, 
-      category: parentItemData.category, 
+      category: parentItemData.category,
+      // replies array is not part of a new reply itself
     };
     await updateDoc(itemRef, {
-        replies: [...(parentItemData.replies || []), newReply] 
+        replies: arrayUnion(newReplyObjectForArray) // Use arrayUnion for atomicity
     });
     console.log(`[Callback] Added reply to item ${itemId} in Firestore.`);
     toast({ title: "Reply Added" });
@@ -1099,13 +1102,13 @@ function RetroSpectifyPageContent() {
                          <PackageSearch className="mr-2 h-4 w-4" /> Change Team
                      </Button>
                  )}
-                  {(appUser.role === APP_ROLES.ADMIN || userTeams.length > 1) && !isDemoMode && (
+                  {appUser.role === APP_ROLES.ADMIN || (userTeams.length > 0 && !isDemoMode )? ( // Show "My Teams" if admin OR has teams (and not demo)
                      <Link href="/teams" passHref>
                          <Button variant="outline" size="sm">
                              <Users className="mr-2 h-4 w-4" /> My Teams
                          </Button>
                      </Link>
-                 )}
+                  ) : null}
                  {appUser.role === APP_ROLES.ADMIN && !isDemoMode && (
                      <Link href="/admin" passHref>
                          <Button variant="outline" size="sm">
@@ -1170,7 +1173,7 @@ function RetroSpectifyPageContent() {
 
          {/* Scrum Master Tools Section */}
         {activeTeamId && !isDemoMode && teamDetails && (appUser.role === APP_ROLES.ADMIN || teamDetails.scrumMasterUid === appUser.id || teamDetails.owner === appUser.id) && (
-            <Accordion type="single" collapsible className="w-full mb-6">
+            <Accordion type="single" collapsible className="w-full mb-6" defaultValue='scrum-master-tools'>
                 <AccordionItem value="scrum-master-tools" className="border-b-0">
                     <Card className="shadow-md border-accent/30 bg-accent/5">
                          <CardHeader className="pb-2 pt-4 px-6">
@@ -1367,6 +1370,7 @@ export default function RetroSpectifyPage() {
         </ProtectedRoute>
     );
 }
+
 
 
 
