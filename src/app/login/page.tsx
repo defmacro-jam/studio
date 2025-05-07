@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, type FormEvent } from 'react';
@@ -12,7 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { LogIn } from 'lucide-react';
-import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore'; // Added Firestore functions
+import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, collection, query, where, getDocs, writeBatch } from 'firebase/firestore'; // Added Firestore functions
 import { TEAM_ROLES } from '@/lib/types'; // Added TEAM_ROLES
 
 export default function LoginPage() {
@@ -29,43 +30,104 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
 
-    const teamIdToJoin = searchParams.get('teamId'); // Get teamId from query, if present
-    const userEmailToJoin = searchParams.get('email')?.toLowerCase(); // Get email from query for pending list removal
-
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
+      const loggedInUserEmail = user.email?.toLowerCase();
 
-      // If joining a team via invite link after logging in
-      if (teamIdToJoin && user) {
+      if (loggedInUserEmail) {
         const userDocRef = doc(db, 'users', user.uid);
         const userDocSnap = await getDoc(userDocRef);
 
         if (userDocSnap.exists()) {
           const userData = userDocSnap.data();
-          const userTeamIds = userData.teamIds || [];
+          let currentTeamIds = userData.teamIds || [];
+          const teamsToUpdateUserWith: string[] = []; // Store IDs of teams user is newly added to
 
-          // Check if user is already part of the team
-          if (!userTeamIds.includes(teamIdToJoin)) {
-            const teamDocRef = doc(db, 'teams', teamIdToJoin);
-            // Add user to team members and roles, remove from pending
-            await updateDoc(teamDocRef, {
-              members: arrayUnion(user.uid),
-              [`memberRoles.${user.uid}`]: TEAM_ROLES.MEMBER, // Default role on join
-              pendingMemberEmails: userEmailToJoin ? arrayRemove(userEmailToJoin) : arrayRemove(email.toLowerCase()) // Remove by pre-filled or typed email
-            });
-            // Add teamId to user's document
-            await updateDoc(userDocRef, {
-              teamIds: arrayUnion(teamIdToJoin)
-            });
-            toast({
-              title: 'Joined Team!',
-              description: "You've been successfully added to the team.",
-            });
+          const batch = writeBatch(db);
+          let batchHasWrites = false;
+          const joinedTeamNames: string[] = [];
+
+          // 1. Handle specific invite from query parameters
+          const teamIdFromQuery = searchParams.get('teamId');
+          const emailFromQuery = searchParams.get('email')?.toLowerCase();
+
+          if (teamIdFromQuery && emailFromQuery === loggedInUserEmail) {
+            const teamDocRef = doc(db, 'teams', teamIdFromQuery);
+            const teamDocSnap = await getDoc(teamDocRef);
+
+            if (teamDocSnap.exists()) {
+              const teamData = teamDocSnap.data();
+              if (!currentTeamIds.includes(teamIdFromQuery)) {
+                batch.update(teamDocRef, {
+                  members: arrayUnion(user.uid),
+                  [`memberRoles.${user.uid}`]: TEAM_ROLES.MEMBER,
+                  pendingMemberEmails: arrayRemove(loggedInUserEmail)
+                });
+                teamsToUpdateUserWith.push(teamIdFromQuery);
+                batchHasWrites = true;
+                if (teamData.name) joinedTeamNames.push(teamData.name);
+              } else if (teamData.pendingMemberEmails?.includes(loggedInUserEmail)) {
+                // Already a member, but still in pending list. Clean up pending list.
+                batch.update(teamDocRef, { pendingMemberEmails: arrayRemove(loggedInUserEmail) });
+                batchHasWrites = true;
+              }
+            } else {
+              console.warn(`Team ${teamIdFromQuery} from invite link not found.`);
+            }
           }
+
+          // 2. General check for any other pending invitations
+          const pendingTeamsQuery = query(collection(db, "teams"), where("pendingMemberEmails", "array-contains", loggedInUserEmail));
+          const pendingTeamsSnapshot = await getDocs(pendingTeamsQuery);
+
+          for (const teamDoc of pendingTeamsSnapshot.docs) {
+            const teamId = teamDoc.id;
+            const teamData = teamDoc.data();
+            
+            // Check if user is already considered a member (either from initial load or added via query param logic)
+            const isAlreadyMemberOrJustAdded = currentTeamIds.includes(teamId) || teamsToUpdateUserWith.includes(teamId);
+
+            if (!isAlreadyMemberOrJustAdded) {
+              batch.update(teamDoc.ref, {
+                members: arrayUnion(user.uid),
+                [`memberRoles.${user.uid}`]: TEAM_ROLES.MEMBER,
+                pendingMemberEmails: arrayRemove(loggedInUserEmail)
+              });
+              teamsToUpdateUserWith.push(teamId);
+              batchHasWrites = true;
+              if (teamData.name && !joinedTeamNames.includes(teamData.name)) joinedTeamNames.push(teamData.name);
+            } else if (teamData.pendingMemberEmails?.includes(loggedInUserEmail)) {
+              // If user is already a member but their email is still in the pending list for this team, remove it.
+              batch.update(teamDoc.ref, {
+                  pendingMemberEmails: arrayRemove(loggedInUserEmail)
+              });
+              batchHasWrites = true;
+            }
+          }
+
+          // Update user's teamIds if they were added to any new teams
+          if (teamsToUpdateUserWith.length > 0) {
+            batch.update(userDocRef, {
+              teamIds: arrayUnion(...teamsToUpdateUserWith)
+            });
+            batchHasWrites = true; // Ensure this flag is true if we update user doc
+          }
+          
+          if (batchHasWrites) {
+            await batch.commit();
+            if (joinedTeamNames.length > 0) {
+                 toast({ title: "Joined Team(s)!", description: `You've been added to: ${joinedTeamNames.join(', ')}.` });
+            }
+          }
+        } else {
+          // This case implies a new user who hasn't completed signup fully,
+          // or an existing user whose Firestore document is missing.
+          // Signup flow should create the user document.
+          // For login, we expect the document to exist.
+          console.warn("User document not found for UID:", user.uid, ". Some features like team invites might not work until signup is complete or document is restored.");
         }
       }
-
 
       toast({
         title: 'Login Successful',
@@ -149,3 +211,4 @@ export default function LoginPage() {
     </div>
   );
 }
+

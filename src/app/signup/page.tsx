@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, type FormEvent, useEffect } from 'react';
@@ -105,9 +106,8 @@ export default function SignupPage() {
       if (teamIdToJoin) {
         const teamDocRef = doc(db, 'teams', teamIdToJoin);
         // Add user to team members and roles, remove from pending
-        // The `memberRoles` field should be an object where keys are UIDs and values are roles.
         await updateDoc(teamDocRef, {
-            members: arrayUnion(user.uid),
+            members: arrayUnion(user.uid), // Keep this to update the members array
             [`memberRoles.${user.uid}`]: TEAM_ROLES.MEMBER, // Assign default MEMBER role for the team
             pendingMemberEmails: arrayRemove(userEmail)
         });
@@ -219,3 +219,4 @@ export default function SignupPage() {
     </div>
   );
 }
+
