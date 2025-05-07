@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, type FormEvent, useEffect } from 'react';
@@ -25,19 +26,20 @@ export function PollSection({
   currentUser,
   onSubmitPoll,
   initialRating = 0,
-  initialJustification = '', // This prop is no longer used to set the initial justification in edit mode
+  initialJustification = '',
   isEditing = false,
   onCancelEdit, // Receive the cancel callback
 }: PollSectionProps) {
   const [rating, setRating] = useState(initialRating);
-  const [justification, setJustification] = useState(''); // Start with empty justification
+  const [justification, setJustification] = useState(initialJustification);
 
   // Effect to update state if initial props change (e.g., starting an edit)
   useEffect(() => {
     setRating(initialRating);
-    // Clear justification when entering edit mode, otherwise use initial (which is always '' now)
-    setJustification(isEditing ? '' : '');
-  }, [initialRating, isEditing]); // Removed initialJustification dependency
+    // When entering edit mode, justification should reflect the initialJustification from props (current user's response)
+    // When submitting new (not editing), it should start empty or use initialJustification if provided (though typically empty for new)
+    setJustification(isEditing ? initialJustification : '');
+  }, [initialRating, initialJustification, isEditing]);
 
 
   const handleSubmit = (e: FormEvent) => {
@@ -113,3 +115,4 @@ export function PollSection({
     </Card>
   );
 }
+
