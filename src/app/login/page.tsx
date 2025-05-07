@@ -30,6 +30,7 @@ export default function LoginPage() {
     setError(null);
 
     const teamIdToJoin = searchParams.get('teamId'); // Get teamId from query, if present
+    const userEmailToJoin = searchParams.get('email')?.toLowerCase(); // Get email from query for pending list removal
 
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -51,7 +52,7 @@ export default function LoginPage() {
             await updateDoc(teamDocRef, {
               members: arrayUnion(user.uid),
               [`memberRoles.${user.uid}`]: TEAM_ROLES.MEMBER, // Default role on join
-              pendingMemberEmails: arrayRemove(email.toLowerCase()) // Remove by email from pending list
+              pendingMemberEmails: userEmailToJoin ? arrayRemove(userEmailToJoin) : arrayRemove(email.toLowerCase()) // Remove by pre-filled or typed email
             });
             // Add teamId to user's document
             await updateDoc(userDocRef, {
@@ -134,7 +135,7 @@ export default function LoginPage() {
             </Button>
             <p className="text-sm text-center text-muted-foreground">
               Don&apos;t have an account?{' '}
-              <Link href="/signup" className="font-medium text-primary hover:underline">
+              <Link href={`/signup${searchParams.toString() ? `?${searchParams.toString()}` : ''}`} className="font-medium text-primary hover:underline">
                 Sign Up
               </Link>
               {' or '}

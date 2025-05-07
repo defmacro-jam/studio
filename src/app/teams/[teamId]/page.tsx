@@ -19,7 +19,7 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Added Select
 import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
-import type { Team as TeamData, TeamMemberDisplay, TeamRole, User as AppUser, RetroItem, PollResponse } from '@/lib/types'; // Import updated types
+import type { Team as TeamData, TeamMemberDisplay, TeamRole, User as AppUserType, RetroItem, PollResponse } from '@/lib/types'; // Import updated types
 import { TEAM_ROLES, APP_ROLES } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton component
 import { generateRetroReport } from '@/ai/flows/generate-retro-report'; // Import the new flow
@@ -35,6 +35,7 @@ function TeamPageContent() {
 
   const [teamData, setTeamData] = useState<TeamData | null>(null);
   const [teamMembers, setTeamMembers] = useState<MemberDisplayInfo[]>([]); // Use updated interface
+  const [appUser, setAppUser] = useState<AppUserType | null>(null); // For current user's app role
   const [inviteEmail, setInviteEmail] = useState('');
   const [loadingTeam, setLoadingTeam] = useState(true);
   const [loadingMembers, setLoadingMembers] = useState(true);
@@ -52,16 +53,31 @@ function TeamPageContent() {
   const [editedTeamName, setEditedTeamName] = useState('');
   const [isSavingName, setIsSavingName] = useState(false);
 
+  // Fetch current user's app-wide role
+  useEffect(() => {
+    const fetchAppUser = async () => {
+      if (currentUser) {
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        const userDocSnap = await getDoc(userDocRef);
+        if (userDocSnap.exists()) {
+          setAppUser(userDocSnap.data() as AppUserType);
+        }
+      }
+    };
+    fetchAppUser();
+  }, [currentUser]);
 
-  // Calculate if the current user is Owner or Manager based on fetched teamData
-  const currentUserAppRole = (currentUser && teamMembers.find(m => m.uid === currentUser.uid)?.role) || null; // Get app role
+
+  // Calculate if the current user is Owner or Manager based on fetched teamData and appUser
   const currentUserTeamRole = teamData?.memberRoles?.[currentUser?.uid ?? ''] ?? null;
   const isOwner = currentUserTeamRole === TEAM_ROLES.OWNER;
   const isManager = currentUserTeamRole === TEAM_ROLES.MANAGER;
   const isScrumMaster = teamData?.scrumMasterUid === currentUser?.uid;
-  const isAdmin = currentUserAppRole === APP_ROLES.ADMIN;
-  const canManageTeam = isOwner || isManager; // Owner or Manager can manage
-  const canCompleteRetro = isAdmin || isScrumMaster;
+  const isAdmin = appUser?.role === APP_ROLES.ADMIN; // Use appUser for app-wide admin check
+  const canManageTeamSettings = isOwner || isManager; // Owner or Manager can edit team name, assign scrum master
+  const canManageMembers = isOwner || isManager; // Owner or Manager can invite/remove members
+  const canChangeRoles = isOwner; // Only Owner can change roles
+  const canCompleteRetro = isAdmin || isScrumMaster || isOwner; // Admin, Scrum Master, or Owner
 
 
    const fetchTeamData = useCallback(async () => {
@@ -143,7 +159,7 @@ function TeamPageContent() {
                         name: data.displayName || data.email?.split('@')[0] || 'Unknown User', // Fallback name
                         avatarUrl: data.avatarUrl || getGravatarUrl(data.email, 96)!, // Use stored avatar or generate Gravatar
                         teamRole: teamRole, // Assign the fetched team-specific role
-                        role: appRole, // Assign app-wide role
+                        role: appRole, // Assign app-wide role (from users collection)
                     });
                 });
             }
@@ -173,31 +189,38 @@ function TeamPageContent() {
                          name: 'Your User Data Missing!',
                          avatarUrl: getGravatarUrl(currentUser?.email || fallbackEmail, 96)!,
                          teamRole: teamRole,
-                         role: appRole,
+                         role: appRole, // This user's app role
                      };
                 }
                 return {
                     id: uid,
                     uid: uid,
                     email: fallbackEmail,
-                    name: 'Unknown User (Data Missing)', 
+                    name: 'Unknown User (Data Missing)',
                     avatarUrl: getGravatarUrl(fallbackEmail, 96)!,
                     teamRole: teamRole,
-                    role: appRole,
+                    role: appRole, // Default app role
                 };
            }).filter(member => member !== null) as MemberDisplayInfo[];
 
 
-           // Sort members: Owner first, then Manager, then Scrum Master (if applicable), then alphabetically by name
+           // Sort members: Owner first, then Manager, then Scrum Master (if applicable and not owner/manager), then alphabetically by name
            const scrumMasterUid = teamData.scrumMasterUid;
            fullMemberList.sort((a, b) => {
-               const roleOrder = { [TEAM_ROLES.OWNER]: 1, [TEAM_ROLES.MANAGER]: 2, [TEAM_ROLES.MEMBER]: 4 }; 
+               const roleOrder = { [TEAM_ROLES.OWNER]: 1, [TEAM_ROLES.MANAGER]: 2, [TEAM_ROLES.MEMBER]: 4 };
 
-               const roleA = (a.uid === scrumMasterUid && a.teamRole !== TEAM_ROLES.OWNER && a.teamRole !== TEAM_ROLES.MANAGER) ? 3 : roleOrder[a.teamRole];
-               const roleB = (b.uid === scrumMasterUid && b.teamRole !== TEAM_ROLES.OWNER && b.teamRole !== TEAM_ROLES.MANAGER) ? 3 : roleOrder[b.teamRole];
+               const isScrumMasterA = a.uid === scrumMasterUid;
+               const isScrumMasterB = b.uid === scrumMasterUid;
+
+               let roleValA = roleOrder[a.teamRole];
+               let roleValB = roleOrder[b.teamRole];
+
+               // If a member is also Scrum Master, give them priority (3) unless they are Owner/Manager
+               if (isScrumMasterA && a.teamRole === TEAM_ROLES.MEMBER) roleValA = 3;
+               if (isScrumMasterB && b.teamRole === TEAM_ROLES.MEMBER) roleValB = 3;
 
 
-               const roleComparison = roleA - roleB;
+               const roleComparison = roleValA - roleValB;
                if (roleComparison !== 0) return roleComparison;
 
                const nameA = (a.name || a.email).toLowerCase();
@@ -216,7 +239,7 @@ function TeamPageContent() {
        } finally {
            setLoadingMembers(false);
        }
-   }, [teamData, currentUser, toast, setError]); 
+   }, [teamData, currentUser, toast, setError]);
 
   useEffect(() => {
       if(currentUser && teamId) {
@@ -224,9 +247,11 @@ function TeamPageContent() {
       } else if (!teamId) {
          setError("Team ID is missing.");
          setLoadingTeam(false);
-          router.push('/'); 
+          router.push('/');
       } else if (!currentUser) {
+         // Handled by ProtectedRoute, but good to stop loading if no current user
          setLoadingTeam(false);
+         setLoadingMembers(false);
       }
   }, [teamId, currentUser, fetchTeamData, router]);
 
@@ -237,9 +262,9 @@ function TeamPageContent() {
   }, [teamData, fetchTeamMembers, error]);
 
   const handleSaveTeamName = async () => {
-    if (!canManageTeam || !teamData || !editedTeamName.trim() || editedTeamName.trim() === teamData.name) {
-        if (!canManageTeam) toast({ title: "Permission Denied", description: "Only Owner or Manager can edit the team name.", variant: "destructive" });
-        if (editedTeamName.trim() === teamData?.name) setIsEditingName(false); 
+    if (!canManageTeamSettings || !teamData || !editedTeamName.trim() || editedTeamName.trim() === teamData.name) {
+        if (!canManageTeamSettings) toast({ title: "Permission Denied", description: "Only Owner or Manager can edit the team name.", variant: "destructive" });
+        if (editedTeamName.trim() === teamData?.name) setIsEditingName(false);
         return;
     }
 
@@ -251,7 +276,7 @@ function TeamPageContent() {
         });
         toast({ title: "Team Name Updated", description: `Team name changed to "${editedTeamName.trim()}".` });
         setIsEditingName(false);
-        await fetchTeamData(); 
+        await fetchTeamData();
     } catch (err: any) {
         console.error('Error updating team name:', err);
         toast({ title: "Update Failed", description: "Could not update team name.", variant: "destructive" });
@@ -263,14 +288,14 @@ function TeamPageContent() {
   const handleCancelEditName = () => {
     setIsEditingName(false);
     if (teamData) {
-        setEditedTeamName(teamData.name); 
+        setEditedTeamName(teamData.name);
     }
   };
 
 
   const handleInviteMember = async (e: FormEvent) => {
     e.preventDefault();
-    if (!canManageTeam || !teamData || !inviteEmail.trim()) return;
+    if (!canManageMembers || !teamData || !inviteEmail.trim()) return;
 
     setIsInviting(true);
     setInviteError(null);
@@ -291,41 +316,51 @@ function TeamPageContent() {
         const querySnapshot = await getDocs(q);
 
         if (querySnapshot.empty) {
+            // User does not exist, add to pending and send invite
             const teamDocRef = doc(db, 'teams', teamData.id);
             await updateDoc(teamDocRef, {
                 pendingMemberEmails: arrayUnion(emailToInvite)
             });
 
             try {
+                 // Construct the signup URL with teamId and email
+                const signupUrl = `${window.location.origin}/signup?teamId=${teamData.id}&email=${encodeURIComponent(emailToInvite)}`;
+                // Firebase sendPasswordResetEmail can be used as an invite mechanism
+                // by providing a link to the signup page with pre-filled info.
                 await sendPasswordResetEmail(auth, emailToInvite, {
-                   url: `${window.location.origin}/signup?teamId=${teamData.id}&email=${encodeURIComponent(emailToInvite)}`, 
-                   handleCodeInApp: false, 
+                   url: signupUrl, // This URL will be in the email
+                   handleCodeInApp: false,
                 });
                  toast({
                      title: 'Invitation Sent',
-                     description: `An invitation email has been sent to ${emailToInvite}. They need to set up their account to join.`,
+                     description: `An invitation email has been sent to ${emailToInvite}. They need to set up their account via the link to join.`,
                      variant: 'default',
                      duration: 7000
                  });
-                 setInviteEmail(''); 
-                 await fetchTeamData(); 
+                 setInviteEmail('');
+                 await fetchTeamData(); // Refresh team data to show pending invite
 
             } catch (emailError: any) {
                  console.error('Error sending invitation/password reset email:', emailError);
                  let description = 'Could not send invitation email. Please check the address and try again.';
                  if (emailError.code === 'auth/invalid-email') {
                      description = 'Invalid email address format.';
+                 } else if (emailError.code === 'auth/user-not-found'){
+                     // This is expected if user doesn't exist, proceed with pending invite.
+                     // The previous toast for "Invitation Sent" is correct.
+                 } else {
+                    setInviteError(description);
+                    toast({ title: 'Invite Failed', description: description, variant: 'destructive' });
                  }
-                 setInviteError(description);
-                 toast({ title: 'Invite Failed', description: description, variant: 'destructive' });
             }
 
             setIsInviting(false);
             return;
         }
 
+        // User exists, add them directly to the team
         const userDoc = querySnapshot.docs[0];
-        const userId = userDoc.id; 
+        const userId = userDoc.id;
         const userData = userDoc.data();
 
         if (teamData.members.includes(userId)) {
@@ -341,20 +376,20 @@ function TeamPageContent() {
 
         batch.update(teamDocRef, {
              members: arrayUnion(userId),
-             [`memberRoles.${userId}`]: TEAM_ROLES.MEMBER, 
-             pendingMemberEmails: arrayRemove(emailToInvite) 
+             [`memberRoles.${userId}`]: TEAM_ROLES.MEMBER, // Assign default Member role
+             pendingMemberEmails: arrayRemove(emailToInvite) // Remove if they were pending
         });
         batch.update(userDocRef, { teamIds: arrayUnion(teamData.id) });
 
         await batch.commit();
 
-      console.log(`User ${userId} (${userData.email}) added to team ${teamData.id}. (Email notification not sent)`);
+      console.log(`User ${userId} (${userData.email}) added to team ${teamData.id}. (Email notification not sent for existing user)`);
 
       toast({
         title: 'Member Added',
         description: `${userData.displayName || userData.email} has been added to the team as a Member.`,
       });
-      setInviteEmail(''); 
+      setInviteEmail('');
       await fetchTeamData();
 
     } catch (err: any) {
@@ -373,7 +408,7 @@ function TeamPageContent() {
 
    const handleRemoveMember = async (memberUid: string) => {
        const memberToRemove = teamMembers.find(m => m.uid === memberUid);
-       if (!canManageTeam || !teamData || !memberToRemove || memberToRemove.teamRole === TEAM_ROLES.OWNER || memberUid === currentUser?.uid) {
+       if (!canManageMembers || !teamData || !memberToRemove || memberToRemove.teamRole === TEAM_ROLES.OWNER || memberUid === currentUser?.uid) {
             let description = "Only Owners or Managers can remove members.";
             if (memberToRemove?.teamRole === TEAM_ROLES.OWNER) description = "The team owner cannot be removed.";
             if (memberUid === currentUser?.uid) description = "You cannot remove yourself using this button.";
@@ -392,7 +427,7 @@ function TeamPageContent() {
 
            batch.update(teamDocRef, {
                 members: arrayRemove(memberUid),
-                [`memberRoles.${memberUid}`]: deleteField() 
+                [`memberRoles.${memberUid}`]: deleteField()
            });
            batch.update(memberDocRef, { teamIds: arrayRemove(teamData.id) });
 
@@ -405,7 +440,7 @@ function TeamPageContent() {
            toast({
                title: 'Member Removed',
                description: `${memberToRemove.name || memberToRemove.email} has been removed from the team.`,
-               variant: 'default' 
+               variant: 'default'
            });
            await fetchTeamData();
 
@@ -419,24 +454,24 @@ function TeamPageContent() {
                  toast({ title: 'Removal Failed', description: 'An error occurred.', variant: 'destructive' });
             }
        } finally {
-           setIsRemoving(null); 
+           setIsRemoving(null);
        }
    };
 
    const handleUpdateRole = async (memberUid: string, newRole: TeamRole) => {
-        if (!isOwner || !teamData || memberUid === currentUser?.uid) {
+        if (!canChangeRoles || !teamData || memberUid === currentUser?.uid) {
             toast({title: "Permission Denied", description: "Only the team owner can change member roles. You cannot change your own role here.", variant: "destructive"});
             return;
         }
         const memberToUpdate = teamMembers.find(m => m.uid === memberUid);
-        if (!memberToUpdate || memberToUpdate.teamRole === newRole) return; 
+        if (!memberToUpdate || memberToUpdate.teamRole === newRole) return;
 
         if (memberToUpdate.teamRole === TEAM_ROLES.OWNER) {
              toast({title: "Action Not Allowed", description: "The team owner's role cannot be changed here.", variant: "destructive"});
              return;
         }
          if (newRole === TEAM_ROLES.OWNER) {
-             toast({title: "Action Not Allowed", description: "Team ownership transfer is not supported via this UI.", variant: "destructive"});
+             toast({title: "Action Not Allowed", description: "Team ownership transfer is not supported via this UI. Promote to Manager first if needed.", variant: "destructive"});
              return;
          }
 
@@ -463,9 +498,9 @@ function TeamPageContent() {
    };
 
    const handleUpdateScrumMaster = async (newScrumMasterUid: string | null) => {
-       if (!canManageTeam || !teamData || teamData.scrumMasterUid === newScrumMasterUid) {
-            if (!canManageTeam) toast({ title: "Permission Denied", description: "Only Owner or Manager can assign Scrum Master.", variant: "destructive" });
-           return; 
+       if (!canManageTeamSettings || !teamData || teamData.scrumMasterUid === newScrumMasterUid) {
+            if (!canManageTeamSettings) toast({ title: "Permission Denied", description: "Only Owner or Manager can assign Scrum Master.", variant: "destructive" });
+           return;
        }
 
        setIsUpdatingScrumMaster(true);
@@ -491,7 +526,7 @@ function TeamPageContent() {
        }
    };
 
-    const handleCompleteRetrospective = async () => {
+    const handleCompleteRetrospective = async (nextScrumMasterUid: string | null) => {
         if (!canCompleteRetro || !teamData || !currentUser) return;
 
         setIsCompletingRetro(true);
@@ -499,37 +534,39 @@ function TeamPageContent() {
 
         try {
             // 1. Fetch all poll responses and retro items for this team
-            // This is simplified; in a real app, these would be scoped to the current retro period/sprint
-            // For now, we assume all existing items/polls are for the "current" retro.
-            // You'll need to implement actual fetching logic here.
-            // Example placeholder fetching:
-            const pollResponsesSnapshot = await getDocs(collection(db, `teams/${teamId}/pollResponses`)); // Adjust path
-            const pollResponses: PollResponse[] = pollResponsesSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as PollResponse));
+            // These should be scoped to the activeTeamId from context
+            const currentTeamId = teamId; // teamId from useParams is the active one for this page
+            const pollResponsesColRef = collection(db, `teams/${currentTeamId}/pollResponses`);
+            const retroItemsColRef = collection(db, `teams/${currentTeamId}/retroItems`);
 
-            const retroItemsSnapshot = await getDocs(collection(db, `teams/${teamId}/retroItems`)); // Adjust path
-            const retroItems: RetroItem[] = retroItemsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as RetroItem));
+            const pollResponsesSnapshot = await getDocs(pollResponsesColRef);
+            const pollResponsesData: PollResponse[] = pollResponsesSnapshot.docs.map(d => ({ id: d.id, ...d.data(), teamId: currentTeamId } as PollResponse));
+
+            const retroItemsSnapshot = await getDocs(retroItemsColRef);
+            const retroItemsData: RetroItem[] = retroItemsSnapshot.docs.map(d => ({ id: d.id, ...d.data(), teamId: currentTeamId } as RetroItem));
 
 
             // 2. Generate the report
             const reportInput: Parameters<typeof generateRetroReport>[0] = {
                 teamId: teamData.id,
                 teamName: teamData.name,
-                pollResponses: pollResponses, // Placeholder - fetch real data
-                retroItems: retroItems,       // Placeholder - fetch real data
+                pollResponses: pollResponsesData,
+                retroItems: retroItemsData,
                 currentScrumMaster: teamMembers.find(m => m.uid === teamData.scrumMasterUid) || null,
             };
+            // The generateRetroReport flow itself will determine the next SM based on participation if one isn't pre-selected.
+            // However, if the UI *allows* pre-selection, that should be passed.
+            // For now, the flow determines it.
             const reportOutput = await generateRetroReport(reportInput);
 
             // 3. Send email to all team members
             const memberEmails = teamMembers.map(member => member.email).filter(email => !!email);
             if (memberEmails.length > 0) {
-                // In a real app, you'd probably send unique emails or use BCC.
-                // This is a simplified example.
                 await fetch('/api/send-email', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        to: memberEmails.join(','), // Or send individually
+                        to: memberEmails.join(','),
                         subject: `Retrospective Report for ${teamData.name} - ${new Date().toLocaleDateString()}`,
                         htmlBody: reportOutput.reportSummaryHtml,
                     }),
@@ -537,23 +574,30 @@ function TeamPageContent() {
                 toast({ title: "Report Emailed", description: "Retrospective summary sent to team members." });
             }
 
-            // 4. Clear retro items and poll responses (soft delete or move to archive in real app)
+            // 4. Clear retro items and poll responses for THIS TEAM
             const batch = writeBatch(db);
-            // Example: delete all items from a subcollection (adjust paths as needed)
-            // pollResponsesSnapshot.forEach(doc => batch.delete(doc.ref));
-            // retroItemsSnapshot.forEach(doc => batch.delete(doc.ref));
+            pollResponsesSnapshot.forEach(doc => batch.delete(doc.ref));
+            retroItemsSnapshot.forEach(doc => batch.delete(doc.ref));
 
-            // 5. Update/set the next Scrum Master (if suggested and different)
-            if (reportOutput.nextScrumMaster && reportOutput.nextScrumMaster.uid !== teamData.scrumMasterUid) {
+            // 5. Update/set the next Scrum Master
+            // If a scrum master was pre-selected via UI, use that. Otherwise, use the one from reportOutput.
+            const finalNextScrumMasterUid = nextScrumMasterUid ?? reportOutput.nextScrumMaster?.uid ?? null;
+
+            if (finalNextScrumMasterUid && finalNextScrumMasterUid !== teamData.scrumMasterUid) {
                 batch.update(doc(db, 'teams', teamData.id), {
-                    scrumMasterUid: reportOutput.nextScrumMaster.uid
+                    scrumMasterUid: finalNextScrumMasterUid
                 });
-                toast({ title: "Next Scrum Master Set", description: `${reportOutput.nextScrumMaster.name} is now the Scrum Master.` });
+                const smUser = teamMembers.find(m => m.uid === finalNextScrumMasterUid);
+                toast({ title: "Next Scrum Master Set", description: `${smUser ? smUser.name : 'Selected user'} is now the Scrum Master.` });
+            } else if (!finalNextScrumMasterUid && teamData.scrumMasterUid) {
+                // If no next SM and there was a current one, clear it
+                 batch.update(doc(db, 'teams', teamData.id), { scrumMasterUid: null });
+                 toast({ title: "Scrum Master Cleared", description: "Scrum Master assignment has been cleared." });
             }
-            
-            // Placeholder: For now, let's not actually delete data.
-            // await batch.commit();
-            toast({ title: "Retrospective Data Cleared (Placeholder)", description: "Items and votes would be cleared here."});
+
+
+            await batch.commit();
+            toast({ title: "Retrospective Data Cleared", description: "Items and votes for this team have been cleared."});
 
 
             toast({ title: "Retrospective Completed!", description: "Report generated and process finished.", duration: 7000 });
@@ -568,7 +612,7 @@ function TeamPageContent() {
     };
 
 
-  if (loadingTeam || !currentUser) {
+  if (loadingTeam || !currentUser || !appUser) { // Add !appUser to condition
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-16 w-16 animate-spin text-primary" />
@@ -595,7 +639,9 @@ function TeamPageContent() {
    }
 
   if (!teamData) {
-    return <div className="flex items-center justify-center min-h-screen"><p>Loading team data...</p></div>;
+    // This case should ideally be covered by the error state or loading state.
+    // If it's reached, it means loading finished, no error, but teamData is still null.
+    return <div className="flex items-center justify-center min-h-screen"><p>No team data available. You may not be a member of this team.</p></div>;
   }
 
   const scrumMaster = teamData.scrumMasterUid ? teamMembers.find(m => m.uid === teamData.scrumMasterUid) : null;
@@ -638,7 +684,7 @@ function TeamPageContent() {
                         <CardTitle className="text-2xl font-bold text-primary flex items-center">
                             <Users className="mr-3 h-6 w-6 flex-shrink-0" />
                             <span className="flex-grow">{teamData.name}</span>
-                            {canManageTeam && (
+                            {canManageTeamSettings && (
                                 <Button variant="ghost" size="icon" className="ml-2 h-7 w-7" onClick={() => setIsEditingName(true)}>
                                     <Pencil className="h-4 w-4" />
                                     <span className="sr-only">Edit team name</span>
@@ -668,7 +714,11 @@ function TeamPageContent() {
                          </AlertDialogHeader>
                          <AlertDialogFooter>
                              <AlertDialogCancel disabled={isCompletingRetro}>Cancel</AlertDialogCancel>
-                             <AlertDialogAction onClick={handleCompleteRetrospective} disabled={isCompletingRetro} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+                             <AlertDialogAction 
+                                onClick={() => handleCompleteRetrospective(teamData.scrumMasterUid || null)} // Pass current SM if any, flow might re-assign
+                                disabled={isCompletingRetro} 
+                                className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                             >
                                  Yes, Complete Retrospective
                              </AlertDialogAction>
                          </AlertDialogFooter>
@@ -698,10 +748,10 @@ function TeamPageContent() {
                     <p className="text-muted-foreground">No Scrum Master assigned.</p>
                 )}
           </CardContent>
-          {canManageTeam && (
+          {canManageTeamSettings && (
                 <CardFooter>
                     <Select
-                        value={teamData.scrumMasterUid ?? 'none'} 
+                        value={teamData.scrumMasterUid ?? 'none'}
                         onValueChange={(value) => handleUpdateScrumMaster(value === 'none' ? null : value)}
                         disabled={isUpdatingScrumMaster || loadingMembers || teamMembers.length === 0}
                     >
@@ -711,7 +761,7 @@ function TeamPageContent() {
                         <SelectContent>
                             <SelectItem value="none">-- Clear Assignment --</SelectItem>
                             {teamMembers
-                                .filter(member => !member.name.includes('Missing')) 
+                                .filter(member => !member.name.includes('Missing'))
                                 .map(member => (
                                     <SelectItem key={member.uid} value={member.uid}>
                                         {member.name} ({member.email})
@@ -771,7 +821,13 @@ function TeamPageContent() {
                                                     <Users className="h-3 w-3 mr-1"/> Member
                                                 </span>
                                             )}
-                                            {teamData.scrumMasterUid === member.uid && member.teamRole === TEAM_ROLES.MEMBER && (
+                                            {/* Display App-wide Admin role if applicable and not owner/manager already */}
+                                            {member.role === APP_ROLES.ADMIN && member.teamRole !== TEAM_ROLES.OWNER && member.teamRole !== TEAM_ROLES.MANAGER && (
+                                                 <span className="text-red-600 dark:text-red-400 inline-flex items-center ml-2 pl-2 border-l border-border/50">
+                                                     <ShieldCheck className="h-3 w-3 mr-1"/> Admin (App)
+                                                 </span>
+                                            )}
+                                            {teamData.scrumMasterUid === member.uid && member.teamRole !== TEAM_ROLES.OWNER && member.teamRole !== TEAM_ROLES.MANAGER && (
                                                  <span className="text-yellow-600 dark:text-yellow-400 inline-flex items-center ml-2 pl-2 border-l border-border/50">
                                                      <Star className="h-3 w-3 mr-1 fill-current"/> Scrum Master
                                                  </span>
@@ -782,17 +838,18 @@ function TeamPageContent() {
                               </div>
 
                               <div className="flex items-center gap-2 flex-shrink-0">
-                                  {isOwner && member.uid !== currentUser.uid && member.teamRole !== TEAM_ROLES.OWNER && (
+                                  {canChangeRoles && member.uid !== currentUser.uid && member.teamRole !== TEAM_ROLES.OWNER && (
                                        <Select
                                            value={member.teamRole}
                                            onValueChange={(newRole) => handleUpdateRole(member.uid, newRole as TeamRole)}
-                                           disabled={isUpdatingRole === member.uid} 
+                                           disabled={isUpdatingRole === member.uid}
                                        >
                                           <SelectTrigger className="w-[120px] h-9 text-xs">
                                               <SelectValue placeholder="Change role" />
                                           </SelectTrigger>
                                           <SelectContent>
-                                               {Object.values(TEAM_ROLES).filter(role => role !== TEAM_ROLES.OWNER).map(role => (
+                                               {/* Allow assigning MANAGER or MEMBER roles. Owner is implicit. */}
+                                               {[TEAM_ROLES.MANAGER, TEAM_ROLES.MEMBER].map(role => (
                                                    <SelectItem key={role} value={role} className="text-xs">
                                                        {role.charAt(0).toUpperCase() + role.slice(1)}
                                                    </SelectItem>
@@ -801,14 +858,14 @@ function TeamPageContent() {
                                       </Select>
                                   )}
 
-                                  {canManageTeam && member.teamRole !== TEAM_ROLES.OWNER && member.uid !== currentUser.uid && (
+                                  {canManageMembers && member.teamRole !== TEAM_ROLES.OWNER && member.uid !== currentUser.uid && (
                                       <AlertDialog>
                                           <AlertDialogTrigger asChild>
                                                <Button
                                                     variant="ghost"
                                                     size="sm"
                                                     className="text-destructive hover:bg-destructive/10 hover:text-destructive h-9 px-2"
-                                                    disabled={isRemoving === member.uid} 
+                                                    disabled={isRemoving === member.uid}
                                                     aria-label={`Remove ${member.name}`}
                                                 >
                                                     {isRemoving === member.uid ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserX className="h-4 w-4" />}
@@ -827,7 +884,7 @@ function TeamPageContent() {
                                                   <AlertDialogAction
                                                       onClick={() => handleRemoveMember(member.uid)}
                                                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                                      disabled={isRemoving === member.uid} 
+                                                      disabled={isRemoving === member.uid}
                                                    >
                                                       {isRemoving === member.uid ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Removing...</> : 'Yes, Remove Member'}
                                                   </AlertDialogAction>
@@ -843,7 +900,7 @@ function TeamPageContent() {
           </CardContent>
       </Card>
 
-       {canManageTeam && (
+       {canManageMembers && (
            <Card>
              <CardHeader>
                <CardTitle className="text-xl flex items-center"><UserPlus className="mr-2 h-5 w-5"/> Invite New Member</CardTitle>
@@ -858,7 +915,7 @@ function TeamPageContent() {
                         type="email"
                         placeholder="member@example.com"
                         value={inviteEmail}
-                        onChange={(e) => { setInviteEmail(e.target.value); setInviteError(null); }} 
+                        onChange={(e) => { setInviteEmail(e.target.value); setInviteError(null); }}
                         required
                         disabled={isInviting}
                         className="flex-grow"

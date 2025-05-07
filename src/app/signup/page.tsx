@@ -105,9 +105,10 @@ export default function SignupPage() {
       if (teamIdToJoin) {
         const teamDocRef = doc(db, 'teams', teamIdToJoin);
         // Add user to team members and roles, remove from pending
+        // The `memberRoles` field should be an object where keys are UIDs and values are roles.
         await updateDoc(teamDocRef, {
             members: arrayUnion(user.uid),
-            [`memberRoles.${user.uid}`]: TEAM_ROLES.MEMBER,
+            [`memberRoles.${user.uid}`]: TEAM_ROLES.MEMBER, // Assign default MEMBER role for the team
             pendingMemberEmails: arrayRemove(userEmail)
         });
         toast({
@@ -133,7 +134,7 @@ export default function SignupPage() {
        } else if (err.code === 'auth/weak-password') {
           message = 'Password is too weak. Please choose a stronger password.';
        }
-       setError(message);
+      setError(message);
        toast({
          title: 'Signup Failed',
          description: message,

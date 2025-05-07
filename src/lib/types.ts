@@ -12,10 +12,10 @@ export const TEAM_ROLES = {
 
 export type TeamRole = typeof TEAM_ROLES[keyof typeof TEAM_ROLES];
 
-// App-wide Roles - Stored on the user document
+// App-wide Roles - Stored on the user document in the 'users' collection
 export const APP_ROLES = {
     ADMIN: 'admin',     // Can manage users, potentially system-wide settings
-    MEMBER: 'member',   // Standard user
+    MEMBER: 'member',   // Standard user (default app-wide role)
 } as const;
 
 export type AppRole = typeof APP_ROLES[keyof typeof APP_ROLES];
@@ -41,6 +41,7 @@ export interface RetroItem {
   isFromPoll?: boolean; // Optional flag
   pollResponseId?: string; // Optional ID
   editing?: boolean; // Optional flag to control UI edit state
+  teamId?: string; // Added teamId for scoping
 }
 
 export interface PollResponse {
@@ -49,6 +50,7 @@ export interface PollResponse {
   rating: number;
   justification: string;
   timestamp: Date | Timestamp; // Allow Firestore Timestamp
+  teamId?: string; // Added teamId for scoping
 }
 
 // Updated Team type for team management features - represents Firestore data structure
@@ -71,8 +73,9 @@ export interface TeamMemberDisplay extends User {
 }
 
 // Type for displaying users on the admin page, including their app-wide role
+// This user type does NOT have teamRole, because it's for app-level admin views.
 export interface AdminUserDisplay extends User {
-    // Inherits id, name, email, avatarUrl, role (which is AppRole)
+    // Inherits id, name, email, avatarUrl, role (which is AppRole from users collection)
     // No teamRole needed here as it's app-wide management
 }
 
@@ -87,10 +90,18 @@ export interface GenerateRetroReportInput {
     teamName: string;
     pollResponses: PollResponse[];
     retroItems: RetroItem[];
-    currentScrumMaster?: User | null;
+    currentScrumMaster?: User | null; // This User type is the generic one
 }
 
 export interface GenerateRetroReportOutput {
     reportSummaryHtml: string; // HTML content for the email body
-    nextScrumMaster?: User | null; // The suggested next scrum master
+    nextScrumMaster?: User | null; // The suggested next scrum master (generic User type)
+}
+
+// Type for active team context
+export interface ActiveTeamContextType {
+  activeTeamId: string | null;
+  setActiveTeamId: (teamId: string | null) => void;
+  teamName: string | null;
+  setTeamName: (name: string | null) => void;
 }

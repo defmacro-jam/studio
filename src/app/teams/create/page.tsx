@@ -20,7 +20,7 @@ function CreateTeamPageContent() {
   const [teamName, setTeamName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [existingTeamNames, setExistingTeamNames] = useState<string[]>([]); // State for existing team names
+  // existingTeamNames state removed as admin check is sufficient for global uniqueness
   const { currentUser } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
@@ -46,35 +46,6 @@ function CreateTeamPageContent() {
         fetchAppUser();
     }, [currentUser, router, toast]);
 
-    // Fetch existing team names for the current user
-    useEffect(() => {
-        const fetchExistingTeams = async () => {
-            if (!currentUser || !appUser || appUser.role !== APP_ROLES.ADMIN) return; // Only admins can create, no need for others to check names
-            setLoading(true); // Indicate loading while fetching existing names
-            try {
-                 const userDocRef = doc(db, 'users', currentUser.uid);
-                 const userDocSnap = await getFirestoreDoc(userDocRef); // Use renamed getFirestoreDoc
-                 if (userDocSnap.exists()) {
-                     const userData = userDocSnap.data();
-                     const teamIds = userData.teamIds || userData.teams || []; // Use teamIds
-                     if (teamIds.length > 0) {
-                         // Fetch names of teams user is already in
-                         const teamsQuery = query(collection(db, 'teams'), where(documentId(), 'in', teamIds));
-                         const querySnapshot = await getDocs(teamsQuery);
-                         const names = querySnapshot.docs.map(doc => (doc.data().name as string).toLowerCase());
-                         setExistingTeamNames(names);
-                     }
-                 }
-            } catch (err) {
-                 console.error("Error fetching existing team names:", err);
-            } finally {
-                 setLoading(false); // Done loading existing names
-            }
-        };
-        if (authChecked) { // Ensure auth state is resolved before fetching
-            fetchExistingTeams();
-        }
-    }, [currentUser, appUser, authChecked]);
 
     // Redirect if not admin
     useEffect(() => {
@@ -99,13 +70,13 @@ function CreateTeamPageContent() {
         return;
     }
 
-     // Check for duplicate team name (case-insensitive) - Note: This checks ALL teams, not just user's teams if user is Admin
-     // Consider if this check should be more sophisticated for admins (e.g., global uniqueness)
+     // Check for duplicate team name (case-insensitive) - This checks ALL teams.
      const allTeamsQuery = query(collection(db, 'teams'), where('name', '==', trimmedTeamName));
      const existingTeamsSnapshot = await getDocs(allTeamsQuery);
      if (!existingTeamsSnapshot.empty) {
          setError(`A team named "${trimmedTeamName}" already exists.`);
          toast({ title: 'Duplicate Name', description: `A team with this name already exists.`, variant: 'destructive' });
+         setLoading(false); // Stop loading if name exists
          return;
      }
 
@@ -166,7 +137,16 @@ function CreateTeamPageContent() {
     }
   };
 
-  if (!authChecked || (authChecked && appUser && appUser.role !== APP_ROLES.ADMIN)) {
+  if (!authChecked || (authChecked && appUser === null)) { // Show loader if authChecked but appUser still null (means it's an admin but data still loading)
+    return (
+        <div className="flex items-center justify-center min-h-screen">
+            <Loader2 className="h-16 w-16 animate-spin text-primary" />
+        </div>
+    );
+  }
+  
+  // This check handles the case where user is confirmed not to be an admin
+  if (authChecked && appUser && appUser.role !== APP_ROLES.ADMIN) {
     return (
         <div className="flex items-center justify-center min-h-screen p-4">
             <Card className="w-full max-w-md shadow-xl bg-destructive/10 border-destructive">

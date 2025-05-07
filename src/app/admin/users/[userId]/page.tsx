@@ -29,7 +29,7 @@ function AdminUserDetailPageContent() {
   const [userData, setUserData] = useState<AdminUserDisplay | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null); // Current viewing user is admin
-  const [selectedRole, setSelectedRole] = useState<AppRole | ''>('');
+  const [selectedAppRole, setSelectedAppRole] = useState<AppRole | ''>(''); // Changed to selectedAppRole
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,10 +85,10 @@ function AdminUserDetailPageContent() {
                 email: data.email,
                 name: data.displayName || data.email.split('@')[0] || 'Unknown User',
                 avatarUrl: data.avatarUrl || getGravatarUrl(data.email, 96)!,
-                role: data.role as AppRole,
+                role: data.role as AppRole, // This is the AppRole
             };
             setUserData(resolvedUser);
-            setSelectedRole(resolvedUser.role); // Initialize selected role
+            setSelectedAppRole(resolvedUser.role); // Initialize selected app role
          } else {
             setError('User not found.');
              toast({ title: 'Error', description: 'Could not find the specified user.', variant: 'destructive' });
@@ -109,10 +109,10 @@ function AdminUserDetailPageContent() {
      }
   }, [isAdmin, fetchUserData]);
 
-   // Handle saving the updated role
-   const handleSaveRole = async (e: FormEvent) => {
+   // Handle saving the updated app role
+   const handleSaveAppRole = async (e: FormEvent) => {
         e.preventDefault();
-        if (!isAdmin || !userData || !selectedRole || userData.role === selectedRole || isSaving) {
+        if (!isAdmin || !userData || !selectedAppRole || userData.role === selectedAppRole || isSaving) {
             return; // No permission, no data, no change, or already saving
         }
         // Prevent admin from changing their own role on this page
@@ -127,21 +127,21 @@ function AdminUserDetailPageContent() {
         try {
             const userDocRef = doc(db, 'users', userData.id);
             await updateDoc(userDocRef, {
-                role: selectedRole
+                role: selectedAppRole // Update the 'role' field in Firestore (AppRole)
             });
 
             toast({
-                title: "User Role Updated",
-                description: `${userData.name}'s app-wide role has been updated to ${selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)}.`,
+                title: "User App Role Updated",
+                description: `${userData.name}'s app-wide role has been updated to ${selectedAppRole.charAt(0).toUpperCase() + selectedAppRole.slice(1)}.`,
             });
              // Update local state to reflect change immediately
-            setUserData(prev => prev ? { ...prev, role: selectedRole } : null);
+            setUserData(prev => prev ? { ...prev, role: selectedAppRole } : null);
             // No need to redirect, stay on the page
 
         } catch (err: any) {
-            console.error("Error updating user role:", err);
-            setError('Failed to update user role.');
-            toast({ title: "Update Failed", description: "Could not update user role.", variant: "destructive" });
+            console.error("Error updating user app role:", err);
+            setError('Failed to update user app role.');
+            toast({ title: "Update Failed", description: "Could not update user app role.", variant: "destructive" });
         } finally {
             setIsSaving(false);
         }
@@ -215,9 +215,9 @@ function AdminUserDetailPageContent() {
             <CardTitle className="text-2xl font-bold text-primary flex items-center justify-center pt-8">
                 <UserCog className="mr-2 h-6 w-6" /> Manage User
             </CardTitle>
-            <CardDescription>View details and manage roles for this user.</CardDescription>
+            <CardDescription>View details and manage app-wide roles for this user.</CardDescription>
          </CardHeader>
-         <form onSubmit={handleSaveRole}>
+         <form onSubmit={handleSaveAppRole}>
              <CardContent className="space-y-6 pt-6">
                 <div className="flex items-center space-x-4">
                     <Avatar className="h-16 w-16 border-2 border-primary">
@@ -238,16 +238,16 @@ function AdminUserDetailPageContent() {
                     <Input id="userId" value={userData.uid} readOnly disabled className="cursor-not-allowed bg-muted/50"/>
                 </div>
 
-                 {/* Role Selection */}
+                 {/* App Role Selection */}
                  <div className="space-y-2">
-                    <Label htmlFor="role">App Role</Label>
+                    <Label htmlFor="appRole">App Role</Label>
                     <Select
-                        value={selectedRole}
-                        onValueChange={(newRole) => setSelectedRole(newRole as AppRole)}
+                        value={selectedAppRole}
+                        onValueChange={(newRole) => setSelectedAppRole(newRole as AppRole)}
                         disabled={isSaving || userData.id === currentUser?.uid} // Disable if saving or if viewing own profile
                     >
-                        <SelectTrigger id="role" className="w-full">
-                            <SelectValue placeholder="Select role" />
+                        <SelectTrigger id="appRole" className="w-full">
+                            <SelectValue placeholder="Select app role" />
                         </SelectTrigger>
                         <SelectContent>
                              {/* Iterate over APP_ROLES */}
@@ -261,15 +261,15 @@ function AdminUserDetailPageContent() {
                         </SelectContent>
                     </Select>
                      {userData.id === currentUser?.uid && (
-                         <p className="text-xs text-muted-foreground">You cannot change your own role here.</p>
+                         <p className="text-xs text-muted-foreground">You cannot change your own app role here.</p>
                      )}
                  </div>
                   {error && <p className="text-sm text-destructive">{error}</p>}
              </CardContent>
              <CardFooter className="flex justify-end">
-                <Button type="submit" disabled={isSaving || userData.role === selectedRole || userData.id === currentUser?.uid}>
+                <Button type="submit" disabled={isSaving || userData.role === selectedAppRole || userData.id === currentUser?.uid}>
                      {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                     {isSaving ? 'Saving...' : 'Save Role'}
+                     {isSaving ? 'Saving...' : 'Save App Role'}
                 </Button>
              </CardFooter>
          </form>
