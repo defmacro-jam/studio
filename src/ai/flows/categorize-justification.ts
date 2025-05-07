@@ -1,7 +1,7 @@
 'use server';
 /**
  * @fileOverview Categorizes each sentence of a user's justification text
- *               into 'well' or 'improve' categories using an LLM.
+ *               into 'well', 'improve', or 'discuss' categories using an LLM.
  *
  * - categorizeJustification - A function to categorize feedback sentences.
  * - CategorizeJustificationInput - Input schema for the categorization.
@@ -26,7 +26,7 @@ const SentenceCategorySchema = ai.defineSchema(
     'SentenceCategory',
     z.object({
         sentence: z.string().describe("An individual sentence from the justification."),
-        category: z.enum(['well', 'improve']).describe("The category the sentence belongs to ('well' or 'improve').")
+        category: z.enum(['well', 'improve', 'discuss']).describe("The category the sentence belongs to ('well', 'improve', or 'discuss').")
     })
 );
 
@@ -45,24 +45,35 @@ const categorizationPrompt = ai.definePrompt(
         input: { schema: CategorizeJustificationInputSchema },
         output: { schema: CategorizeJustificationOutputSchema },
         prompt: `
-            Analyze the following team retrospective feedback justification, ignoring the provided rating.
+            Analyze the following team retrospective feedback justification, ignoring the provided rating for initial categorization of sentences.
             Justification: "{{{justification}}}"
 
             Your task is to:
             1. Break the justification text into individual sentences.
-            2. For EACH sentence, categorize it as either 'well' or 'improve'.
-                - 'well': Represents positive feedback, successes, or things that went well (e.g., "Deployment was fast", "Great teamwork").
+            2. For EACH sentence, categorize it as 'well', 'improve', or 'discuss'.
+                - 'well': Represents positive feedback, successes, or things that went well (e.g., "Deployment was fast", "Great teamwork", "I liked the new feature").
                 - 'improve': Represents constructive criticism, challenges, problems, areas for development, or things that could be better (e.g., "The build failed", "Communication was unclear", "Need more testing").
-            3. Ignore any sentences that are purely neutral observations, questions, or explicit discussion points (e.g., "We should discuss this", "Is this the right approach?"). Do not include these neutral/discussion sentences in the output array.
-            4. If the justification is empty or contains no sentences that fit into 'well' or 'improve', return an empty array.
+                - 'discuss': Represents neutral observations, questions, explicit discussion points, or suggestions for future consideration (e.g., "We should discuss the new tool", "Is this the right approach?", "Let's explore option X next time", "The timesheet process needs clarification").
+            3. If a sentence clearly indicates a need for discussion or is a question, categorize it as 'discuss' even if it has a slightly positive or negative tone, unless the positive/negative aspect is very strong.
+            4. If the justification is empty or contains no sentences that fit into 'well', 'improve', or 'discuss', return an empty array.
 
-            Return the results ONLY as a JSON array of objects, where each object contains the 'sentence' and its determined 'category' ('well' or 'improve'). Match the output schema precisely.
+            Return the results ONLY as a JSON array of objects, where each object contains the 'sentence' and its determined 'category' ('well', 'improve', or 'discuss'). Match the output schema precisely.
 
-            Example Input Justification: "The deployment was smooth. However, the testing phase took too long. We should discuss the process."
+            Example Input Justification: "The deployment was smooth. However, the testing phase took too long. We should discuss the process. What about timesheets?"
             Example Output:
             [
               { "sentence": "The deployment was smooth.", "category": "well" },
-              { "sentence": "However, the testing phase took too long.", "category": "improve" }
+              { "sentence": "However, the testing phase took too long.", "category": "improve" },
+              { "sentence": "We should discuss the process.", "category": "discuss" },
+              { "sentence": "What about timesheets?", "category": "discuss" }
+            ]
+
+            Example Input Justification: "Project X team was overly needy on the help channel. we got free cookies on wednesday. we should discuss timesheets."
+            Example Output:
+            [
+              { "sentence": "Project X team was overly needy on the help channel.", "category": "improve" },
+              { "sentence": "we got free cookies on wednesday.", "category": "well" },
+              { "sentence": "we should discuss timesheets.", "category": "discuss" }
             ]
         `,
     }
