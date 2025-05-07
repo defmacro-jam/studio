@@ -38,9 +38,16 @@ import {
 } from "@/components/ui/accordion";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
-
-// mockTeamId removed
 
 function RetroSpectifyPageContent() {
   const { currentUser, loading: authLoading } = useAuth(); 
@@ -54,7 +61,6 @@ function RetroSpectifyPageContent() {
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [isAdjustRatingModalOpen, setIsAdjustRatingModalOpen] = useState(false);
   const [ratingAdjustmentProps, setRatingAdjustmentProps] = useState<{ itemIdToAdjust: string, currentRating: number; suggestedRating: number } | null>(null);
-  // isDemoMode state removed
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [activeTeamName, setActiveTeamName] = useState<string | null>(null);
   const [userTeams, setUserTeams] = useState<Team[]>([]);
@@ -64,13 +70,12 @@ function RetroSpectifyPageContent() {
   const [teamMembersForScrumMasterSelection, setTeamMembersForScrumMasterSelection] = useState<User[]>([]);
   const [selectedNextScrumMasterUid, setSelectedNextScrumMasterUid] = useState<string | null>(null);
   const [isEndingRetro, setIsEndingRetro] = useState(false);
+  const [reportHtmlForDisplay, setReportHtmlForDisplay] = useState<string | null>(null);
+  const [showReportDisplay, setShowReportDisplay] = useState<boolean>(false);
 
 
   const { toast } = useToast();
   console.log("[Page Lifecycle] RetroSpectifyPageContent rendering. Auth loading:", authLoading, "Current user:", currentUser ? currentUser.uid : 'none', "Active Team ID:", activeTeamId);
-
-
-  // Demo mode listener removed
 
 
   useEffect(() => {
@@ -156,7 +161,6 @@ function RetroSpectifyPageContent() {
             setActiveTeamId(null);
             setActiveTeamName(null);
             setShowTeamSelector(false);
-             // Removed demo mode specific logic for active team
           }
         } else {
           console.warn("[Effect] User document not found in Firestore for UID:", currentUser.uid, ". This may cause issues.");
@@ -171,7 +175,6 @@ function RetroSpectifyPageContent() {
           });
           setUserTeams([]);
           setShowTeamSelector(false);
-          // Removed demo mode specific logic for active team
           setActiveTeamId(null);
           setActiveTeamName(null);
         }
@@ -186,11 +189,11 @@ function RetroSpectifyPageContent() {
 
     fetchInitialUserData();
 
-  }, [currentUser, authLoading, router, toast]); // Removed isDemoMode dependency
+  }, [currentUser, authLoading, router, toast]);
 
 
   useEffect(() => {
-    if (!activeTeamId) { // Removed demo mode check
+    if (!activeTeamId) {
       setTeamDetails(null);
       setTeamMembersForScrumMasterSelection([]);
       return;
@@ -247,7 +250,7 @@ function RetroSpectifyPageContent() {
     };
 
     fetchTeamAndMembers();
-  }, [activeTeamId, toast]); // Removed isDemoMode dependency
+  }, [activeTeamId, toast]);
 
 
  useEffect(() => {
@@ -260,8 +263,6 @@ function RetroSpectifyPageContent() {
       setHasSubmitted(false);
       return; 
     }
-
-    // Removed demo mode check for listeners
     
     console.log(`[Effect] Active team ID: ${activeTeamId}. Setting up listeners for retro items and poll responses.`);
 
@@ -318,15 +319,15 @@ function RetroSpectifyPageContent() {
         unsubscribeRetroItems();
         unsubscribePollResponses();
     };
-}, [activeTeamId, appUser, toast]); // Removed isDemoMode dependency
+}, [activeTeamId, appUser, toast]);
 
 
   useEffect(() => {
-     if (!appUser || !activeTeamId ) return; // Removed demo mode check
+     if (!appUser || !activeTeamId ) return;
     const userResponseExists = pollResponses.some(resp => resp.author.id === appUser.id);
     setHasSubmitted(userResponseExists);
     console.log(`[Effect] Poll responses changed. User ${appUser.id} has submitted for team ${activeTeamId}:`, userResponseExists);
-  }, [pollResponses, appUser, activeTeamId]); // Removed isDemoMode dependency
+  }, [pollResponses, appUser, activeTeamId]);
 
 
   const currentUserResponse = useMemo(() => {
@@ -351,8 +352,7 @@ function RetroSpectifyPageContent() {
 
 
   const removeExistingPollItems = useCallback(async (responseId: string) => {
-       if (!activeTeamId ) { // Removed demo mode check
-           // Removed demo mode toast
+       if (!activeTeamId ) {
            return;
         }
        console.log(`[Callback] removeExistingPollItems for responseId ${responseId} in team ${activeTeamId}`);
@@ -370,7 +370,7 @@ function RetroSpectifyPageContent() {
         console.error(`[Callback] Error removing existing poll items from Firestore for responseId ${responseId}:`, error);
         toast({ title: "Error", description: "Could not clean up previous feedback items.", variant: "destructive" });
       }
-  }, [activeTeamId, toast]); // Removed isDemoMode dependency
+  }, [activeTeamId, toast]);
 
 
   const processJustification = useCallback(async (rating: number, justification: string, responseId: string) => {
@@ -378,7 +378,6 @@ function RetroSpectifyPageContent() {
         console.warn("[Callback] processJustification: appUser or activeTeamId missing.");
         return;
       }
-      // Removed demo mode check
 
        console.log(`[Callback] processJustification for responseId ${responseId}, rating ${rating}, team ${activeTeamId}`);
        await removeExistingPollItems(responseId);
@@ -471,7 +470,7 @@ function RetroSpectifyPageContent() {
            });
            console.log(`[Callback] Added fallback 'discuss' item to Firestore due to AI error. ID: ${newItemRef.id}`);
       }
-  }, [appUser, activeTeamId, removeExistingPollItems, toast, isEditingPoll, currentUserResponse]); // Removed isDemoMode dependency
+  }, [appUser, activeTeamId, removeExistingPollItems, toast, isEditingPoll, currentUserResponse]);
 
 
   const handlePollSubmit = useCallback(async (rating: number, justification: string) => {
@@ -480,8 +479,6 @@ function RetroSpectifyPageContent() {
         return;
      }
      console.log(`[Callback] handlePollSubmit for team ${activeTeamId}. Rating: ${rating}, Editing: ${isEditingPoll}`);
-
-      // Removed demo mode check
 
     let responseId: string;
 
@@ -510,7 +507,7 @@ function RetroSpectifyPageContent() {
     setHasSubmitted(true); 
     processJustification(rating, justification, responseId);
     setIsEditingPoll(false);
-  }, [appUser, activeTeamId, isEditingPoll, processJustification, toast, currentUserResponse]); // Removed isDemoMode dependency
+  }, [appUser, activeTeamId, isEditingPoll, processJustification, toast, currentUserResponse]);
 
   const handleEditPoll = useCallback(() => {
     console.log("[Callback] handleEditPoll triggered.");
@@ -530,7 +527,6 @@ function RetroSpectifyPageContent() {
         console.warn("[Callback] handleAddItem: appUser or activeTeamId missing.");
         return;
      }
-     // Removed demo mode check
 
      console.log(`[Callback] handleAddItem to category ${category} for team ${activeTeamId}. Content: ${content.substring(0,20)}...`);
     const newItemRef = await addDoc(collection(db, `teams/${activeTeamId}/retroItems`), {
@@ -547,14 +543,13 @@ function RetroSpectifyPageContent() {
         description: `Your item was added to "${category === 'discuss' ? 'Discussion Topics' : category === 'action' ? 'Action Items' : category === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`,
       });
     }
-  }, [appUser, activeTeamId, toast]); // Removed isDemoMode dependency
+  }, [appUser, activeTeamId, toast]);
 
   const handleEditItem = useCallback(async (itemId: string, newContent: string) => {
     if (!appUser || !activeTeamId) {
         console.warn("[Callback] handleEditItem: appUser or activeTeamId missing.");
         return;
     }
-    // Removed demo mode check
 
     console.log(`[Callback] handleEditItem for item ${itemId}, new content: ${newContent.substring(0,20)}...`);
     const itemRef = doc(db, `teams/${activeTeamId}/retroItems`, itemId);
@@ -577,14 +572,13 @@ function RetroSpectifyPageContent() {
     });
     console.log(`[Callback] Updated retro item ${itemId} in Firestore.`);
     toast({ title: "Item Updated", description: "Changes saved." });
-  }, [appUser, activeTeamId, toast]); // Removed isDemoMode dependency
+  }, [appUser, activeTeamId, toast]);
 
   const handleGenerateActionItem = useCallback(async (discussionItemId: string) => {
       if (!appUser || !activeTeamId) {
         console.warn("[Callback] handleGenerateActionItem: appUser or activeTeamId missing.");
         return;
       }
-      // Removed demo mode check
       console.log(`[Callback] handleGenerateActionItem for discussion item ${discussionItemId} in team ${activeTeamId}`);
       const discussionItem = retroItems.find(item => item.id === discussionItemId);
       if (!discussionItem || discussionItem.category !== 'discuss') {
@@ -613,7 +607,7 @@ function RetroSpectifyPageContent() {
           console.error("[Callback] Error generating action item with AI:", error);
           toast({ title: "Action Item Generation Failed", description: "Could not generate an action item.", variant: "destructive" });
       }
-  }, [retroItems, appUser, activeTeamId, toast]); // Removed isDemoMode dependency
+  }, [retroItems, appUser, activeTeamId, toast]);
 
 
   const handleAddReply = useCallback(async (itemId: string, replyContent: string) => {
@@ -621,7 +615,6 @@ function RetroSpectifyPageContent() {
         console.warn("[Callback] handleAddReply: appUser or activeTeamId missing.");
         return;
      }
-     // Removed demo mode check
      console.log(`[Callback] handleAddReply to item ${itemId} in team ${activeTeamId}. Reply: ${replyContent.substring(0,20)}...`);
     const itemRef = doc(db, `teams/${activeTeamId}/retroItems`, itemId);
     const itemDoc = await getDoc(itemRef);
@@ -645,10 +638,10 @@ function RetroSpectifyPageContent() {
     });
     console.log(`[Callback] Added reply to item ${itemId} in Firestore.`);
     toast({ title: "Reply Added" });
-  }, [appUser, activeTeamId, toast]); // Removed isDemoMode dependency
+  }, [appUser, activeTeamId, toast]);
 
   const handleEditReply = useCallback(async (itemId: string, replyId: string, newContent: string) => {
-    if (!appUser || !activeTeamId ) { // Removed demo mode check
+    if (!appUser || !activeTeamId ) {
         toast({ title: "Error", description: "Cannot edit reply in this state.", variant: "destructive" });
         return;
     }
@@ -685,10 +678,10 @@ function RetroSpectifyPageContent() {
 
     await updateDoc(itemRef, { replies: updatedReplies });
     toast({ title: "Reply Updated" });
-}, [appUser, activeTeamId, toast]); // Removed isDemoMode dependency
+}, [appUser, activeTeamId, toast]);
 
 const handleDeleteReply = useCallback(async (itemId: string, replyId: string) => {
-    if (!appUser || !activeTeamId ) { // Removed demo mode check
+    if (!appUser || !activeTeamId ) {
         toast({ title: "Error", description: "Cannot delete reply in this state.", variant: "destructive" });
         return;
     }
@@ -720,7 +713,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
     const updatedReplies = currentReplies.filter(reply => reply.id !== replyId);
     await updateDoc(itemRef, { replies: updatedReplies });
     toast({ title: "Reply Deleted" });
-}, [appUser, activeTeamId, toast]); // Removed isDemoMode dependency
+}, [appUser, activeTeamId, toast]);
 
 
    const handleDeleteItem = useCallback(async (itemId: string) => {
@@ -728,7 +721,6 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
         console.warn("[Callback] handleDeleteItem: appUser or activeTeamId missing.");
         return;
      }
-     // Removed demo mode check
      console.log(`[Callback] handleDeleteItem ${itemId} in team ${activeTeamId}`);
      const itemRef = doc(db, `teams/${activeTeamId}/retroItems`, itemId);
      const itemDoc = await getDoc(itemRef);
@@ -749,7 +741,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
      await deleteDoc(itemRef);
      console.log(`[Callback] Deleted retro item ${itemId} from Firestore.`);
     toast({ title: "Item Deleted", variant: "default" }); 
-   }, [appUser, activeTeamId, isEditingPoll, toast]); // Removed isDemoMode dependency
+   }, [appUser, activeTeamId, isEditingPoll, toast]);
 
 
    const handleDragStart = useCallback((itemId: string) => {
@@ -774,7 +766,6 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
              console.warn("[Callback] handleMoveItem: appUser or activeTeamId missing.");
              return;
         }
-         // Removed demo mode check
         console.log(`[Callback] handleMoveItem ${itemId} to category ${targetCategory} in team ${activeTeamId}`);
         const itemToMove = retroItems.find(item => item.id === itemId);
         if (!itemToMove) {
@@ -829,7 +820,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
              }
          }
          setDraggingItemId(null);
-    }, [appUser, activeTeamId, retroItems, pollResponses, toast, handleGenerateActionItem]); // Removed isDemoMode dependency
+    }, [appUser, activeTeamId, retroItems, pollResponses, toast, handleGenerateActionItem]);
 
 
     const handleAdjustRatingConfirm = useCallback(async (newRating: number) => {
@@ -839,7 +830,6 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
              setRatingAdjustmentProps(null);
              return;
         }
-        // Removed demo mode check
         console.log(`[Callback] handleAdjustRatingConfirm for team ${activeTeamId}. New rating: ${newRating}`);
         const responseDocRef = doc(db, `teams/${activeTeamId}/pollResponses`, currentUserResponse.id);
         await updateDoc(responseDocRef, {
@@ -850,7 +840,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
         toast({ title: "Rating Adjusted", description: `Your sentiment rating updated to ${newRating} stars.` });
         setIsAdjustRatingModalOpen(false);
         setRatingAdjustmentProps(null);
-    }, [currentUserResponse, appUser, activeTeamId, toast]); // Removed isDemoMode dependency
+    }, [currentUserResponse, appUser, activeTeamId, toast]);
 
     const handleAdjustRatingCancel = useCallback(() => {
          console.log("[Callback] handleAdjustRatingCancel.");
@@ -918,19 +908,18 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
             return timestamp.toISOString();
         }
         if (typeof timestamp === 'string') {
-            // Try to parse, if fails, return as is or throw error
             try {
                 return new Date(timestamp).toISOString();
             } catch {
-                return timestamp; // Or handle error appropriately
+                console.warn("Could not parse timestamp string to Date:", timestamp);
+                return new Date().toISOString(); // fallback
             }
         }
-        // Handle Firebase Timestamp
         if (timestamp && typeof (timestamp as FBTimestamp).toDate === 'function') {
             return (timestamp as FBTimestamp).toDate().toISOString();
         }
-        // Fallback for unexpected types or null/undefined
-        return new Date().toISOString(); // Or throw an error, or return a specific string
+        console.warn("Unexpected timestamp type:", typeof timestamp, timestamp);
+        return new Date().toISOString(); // fallback
     };
     
     const convertRetroItemToPlain = (item: RetroItem): PlainRetroItem => {
@@ -957,7 +946,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
         }
 
         setIsEndingRetro(true);
-        toast({ title: "Processing Retrospective...", description: "Generating report and preparing emails." });
+        toast({ title: "Processing Retrospective...", description: "Generating report and preparing data." });
 
         try {
             const pollResponsesColRef = collection(db, `teams/${activeTeamId}/pollResponses`);
@@ -982,20 +971,12 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
                 nextScrumMaster: teamMembersForScrumMasterSelection.find(m => m.id === selectedNextScrumMasterUid) || undefined,
             };
             const reportOutput = await generateRetroReport(reportInput);
+            
+            // Display report on screen instead of emailing
+            setReportHtmlForDisplay(reportOutput.reportSummaryHtml);
+            setShowReportDisplay(true);
+            toast({ title: "Report Generated", description: "Retrospective summary is ready to view.", duration: 7000 });
 
-            const memberEmails = teamMembersForScrumMasterSelection.map(member => member.email).filter(email => !!email);
-            if (memberEmails.length > 0) {
-                await fetch('/api/send-email', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        to: memberEmails.join(','),
-                        subject: `Retrospective Report for ${teamDetails.name} - ${new Date().toLocaleDateString()}`,
-                        htmlBody: reportOutput.reportSummaryHtml,
-                    }),
-                });
-                toast({ title: "Report Emailed", description: "Retrospective summary sent to team members." });
-            }
 
             const batch = writeBatch(db);
             pollResponsesSnapshot.forEach(doc => batch.delete(doc.ref));
@@ -1014,7 +995,6 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
             await batch.commit();
             toast({ title: "Retrospective Data Cleared", description: "Items and votes for this team have been cleared."});
 
-            toast({ title: "Retrospective Completed!", description: "Report generated and process finished.", duration: 7000 });
             setSelectedNextScrumMasterUid(null);
             const updatedTeamDocSnap = await getDoc(doc(db, 'teams', activeTeamId));
             if (updatedTeamDocSnap.exists()) {
@@ -1051,7 +1031,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
     );
   }
 
-  if (showTeamSelector && userTeams.length > 0) { // Removed demo mode check
+  if (showTeamSelector && userTeams.length > 0) {
     console.log("[Render] Showing TeamSelector. User teams:", userTeams.length, "Active Team ID:", activeTeamId);
     return (
         <div className="container mx-auto p-4 md:p-8 max-w-screen-2xl">
@@ -1098,8 +1078,8 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
   }
 
 
-  const canInteractWithCurrentTeam = !!activeTeamId && ((appUser.teamIds || []).includes(activeTeamId)); // Removed demo mode check
-  console.log(`[Render] Can interact with current team (${activeTeamId}):`, canInteractWithCurrentTeam); // Removed isDemoMode log
+  const canInteractWithCurrentTeam = !!activeTeamId && ((appUser.teamIds || []).includes(activeTeamId));
+  console.log(`[Render] Can interact with current team (${activeTeamId}):`, canInteractWithCurrentTeam);
   console.log(`[Render] Current appUser teamIds:`, appUser.teamIds, "Active Team ID:", activeTeamId);
 
   const isCurrentUserScrumMaster = teamDetails?.scrumMasterUid === appUser.id;
@@ -1113,19 +1093,19 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
                 {activeTeamName && <span className="text-xl text-muted-foreground">({activeTeamName})</span>}
             </div>
             <div className="flex items-center space-x-3">
-                 {userTeams.length > 1 && activeTeamId && ( // Removed demo mode check
+                 {userTeams.length > 1 && activeTeamId && (
                      <Button variant="outline" size="sm" onClick={handleChangeTeam}>
                          <PackageSearch className="mr-2 h-4 w-4" /> Change Team
                      </Button>
                  )}
-                  {appUser.role === APP_ROLES.ADMIN || (userTeams.length > 0 )? ( // Removed demo mode check
+                  {appUser.role === APP_ROLES.ADMIN || (userTeams.length > 0 )? (
                      <Link href="/teams" passHref>
                          <Button variant="outline" size="sm">
                              <Users className="mr-2 h-4 w-4" /> My Teams
                          </Button>
                      </Link>
                   ) : null}
-                 {appUser.role === APP_ROLES.ADMIN && ( // Removed demo mode check
+                 {appUser.role === APP_ROLES.ADMIN && (
                      <Link href="/admin" passHref>
                          <Button variant="outline" size="sm">
                              <ShieldCheck className="mr-2 h-4 w-4" /> Admin
@@ -1147,9 +1127,8 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
             </div>
         </header>
 
-        {/* Demo mode info card removed */}
 
-        {!activeTeamId && !isLoading && userTeams.length === 0 && ( // Removed demo mode check
+        {!activeTeamId && !isLoading && userTeams.length === 0 && (
              <Card className="mt-8 shadow-lg border-primary/20 bg-primary/5">
                 <CardHeader>
                   <CardTitle className="text-xl font-semibold text-primary flex items-center">
@@ -1173,7 +1152,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
               </Card>
         )}
 
-        {activeTeamId && teamDetails && (appUser.role === APP_ROLES.ADMIN || teamDetails.scrumMasterUid === appUser.id || teamDetails.owner === appUser.id) && ( // Removed demo mode check
+        {activeTeamId && teamDetails && (appUser.role === APP_ROLES.ADMIN || teamDetails.scrumMasterUid === appUser.id || teamDetails.owner === appUser.id) && (
             <Accordion type="single" collapsible className="w-full mb-6" defaultValue='scrum-master-tools'>
                 <AccordionItem value="scrum-master-tools" className="border-b-0">
                     <Card className="shadow-md border-accent/30 bg-accent/5">
@@ -1230,7 +1209,7 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
                                             <AlertDialogHeader>
                                                 <AlertDialogTitle>Confirm End Retrospective</AlertDialogTitle>
                                                 <AlertDialogDescription>
-                                                    This will generate a report, email it to members, clear current data, and assign
+                                                    This will generate a report, clear current data, and assign
                                                     <span className="font-semibold"> {teamMembersForScrumMasterSelection.find(m=>m.id === selectedNextScrumMasterUid)?.name || 'the selected user'} </span>
                                                     as the new Scrum Master. Are you sure?
                                                 </AlertDialogDescription>
@@ -1357,6 +1336,25 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
             </>
         ) : null }
 
+         {showReportDisplay && reportHtmlForDisplay && (
+            <Dialog open={showReportDisplay} onOpenChange={setShowReportDisplay}>
+                <DialogContent className="sm:max-w-[800px]">
+                    <DialogHeader>
+                        <DialogTitle>Retrospective Report - {activeTeamName || 'Team'}</DialogTitle>
+                        <DialogDescription>
+                            This is the summary of the completed retrospective.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <ScrollArea className="h-[60vh] w-full rounded-md border p-4">
+                         <div dangerouslySetInnerHTML={{ __html: reportHtmlForDisplay }} className="prose dark:prose-invert max-w-none"/>
+                    </ScrollArea>
+                    <DialogFooter>
+                        <Button onClick={() => setShowReportDisplay(false)}>Close</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        )}
+
 
        {ratingAdjustmentProps && isAdjustRatingModalOpen && (
          <AdjustRatingModal
@@ -1379,10 +1377,3 @@ export default function RetroSpectifyPage() {
         </ProtectedRoute>
     );
 }
-
-
-
-
-
-
-
