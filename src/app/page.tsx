@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, type DragEvent } from 'react';
@@ -1133,4 +1132,3 @@ export default function RetroSpectifyPage() {
         </ProtectedRoute>
     );
 }
-
