@@ -1,4 +1,5 @@
 
+
 import type { RetroItem, User } from '@/lib/types';
 import { RetroItemCard } from './RetroItemCard';
 import { Textarea } from '@/components/ui/textarea';
@@ -12,20 +13,22 @@ type Category = 'well' | 'improve' | 'discuss' | 'action';
 
 interface RetroSectionProps {
   title: string;
-  category: Category; // Explicitly pass the category
+  category: Category; 
   items: RetroItem[];
   currentUser: User;
-  onAddItem: (content: string) => Promise<void>; // Changed to expect a Promise
+  onAddItem: (content: string) => Promise<void>; 
   onAddReply: (itemId: string, replyContent: string) => Promise<void>;
   onMoveItem: (itemId: string, targetCategory: Category) => Promise<void>;
   onEditItem?: (itemId: string, newContent: string) => Promise<void>;
   onDeleteItem?: (itemId: string) => Promise<void>;
+  onEditReply?: (itemId: string, replyId: string, newContent: string) => Promise<void>; // New prop
+  onDeleteReply?: (itemId: string, replyId: string) => Promise<void>; // New prop
   allowAddingItems?: boolean;
   className?: string;
-  draggingItemId?: string | null; // ID of the item currently being dragged
-  onDragStartItem: (itemId: string) => void; // Callback for drag start
-  onDragEndItem: () => void; // Callback for drag end
-  isDropTargetForActionGeneration?: boolean; // Optional flag for action item target styling
+  draggingItemId?: string | null; 
+  onDragStartItem: (itemId: string) => void; 
+  onDragEndItem: () => void; 
+  isDropTargetForActionGeneration?: boolean; 
 }
 
 export function RetroSection({
@@ -38,6 +41,8 @@ export function RetroSection({
   onMoveItem,
   onEditItem,
   onDeleteItem,
+  onEditReply, // Destructure new prop
+  onDeleteReply, // Destructure new prop
   allowAddingItems = true,
   className,
   draggingItemId,
@@ -48,10 +53,10 @@ export function RetroSection({
   const [newItemContent, setNewItemContent] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
 
-  const handleAddItemSubmit = async (e: FormEvent) => { // Made async
+  const handleAddItemSubmit = async (e: FormEvent) => { 
     e.preventDefault();
     if (newItemContent.trim()) {
-      await onAddItem(newItemContent); // Await the call
+      await onAddItem(newItemContent); 
       setNewItemContent('');
     }
   };
@@ -68,7 +73,7 @@ export function RetroSection({
      }
   };
 
-  const handleDrop = async (e: DragEvent<HTMLDivElement>) => { // Made async
+  const handleDrop = async (e: DragEvent<HTMLDivElement>) => { 
     e.preventDefault();
     setIsDragOver(false);
     const dataString = e.dataTransfer.getData('application/json');
@@ -87,13 +92,16 @@ export function RetroSection({
         
         if (originalCategory === category) {
             console.log("Item dropped onto its own category. No action taken by RetroSection.");
+            onDragEndItem(); // Still call drag end to reset state
             return;
         }
         
-        await onMoveItem(droppedItemId, category); // Await the call
+        await onMoveItem(droppedItemId, category); 
 
     } catch (error) {
         console.error("Failed to parse dropped data or execute move in RetroSection:", error);
+    } finally {
+        onDragEndItem(); // Ensure drag end is called
     }
   };
 
@@ -123,6 +131,8 @@ export function RetroSection({
             onAddReply={onAddReply}
             onEditItem={onEditItem}
             onDeleteItem={onDeleteItem}
+            onEditReply={onEditReply} 
+            onDeleteReply={onDeleteReply}
             onDragStartItem={onDragStartItem}
             onDragEndItem={onDragEndItem}
             isDragging={draggingItemId === item.id}
@@ -155,3 +165,4 @@ export function RetroSection({
     </Card>
   );
 }
+

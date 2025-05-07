@@ -3,11 +3,11 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, type DragEvent } from 'react';
-import { useRouter } from 'next/navigation'; // Import useRouter
-import Link from 'next/link'; // Import Link
-import { signOut } from 'firebase/auth'; // Import signOut
-import { Timestamp as FBTimestamp, doc, getDoc, onSnapshot, collection, query, where, addDoc, updateDoc, deleteDoc, serverTimestamp, writeBatch, getDocs as getFirestoreDocs, arrayUnion } from 'firebase/firestore'; // Renamed getDocs to getFirestoreDocs, added FBTimestamp, arrayUnion
-import type { RetroItem, PollResponse, User, Category, AppRole, GlobalConfig, Team } from '@/lib/types'; // Added AppRole, GlobalConfig
+import { useRouter } from 'next/navigation'; 
+import Link from 'next/link'; 
+import { signOut } from 'firebase/auth'; 
+import { Timestamp as FBTimestamp, doc, getDoc, onSnapshot, collection, query, where, addDoc, updateDoc, deleteDoc, serverTimestamp, writeBatch, getDocs as getFirestoreDocs, arrayUnion } from 'firebase/firestore'; 
+import type { RetroItem, PollResponse, User, Category, AppRole, GlobalConfig, Team } from '@/lib/types'; 
 import { PollSection } from '@/components/retrospectify/PollSection';
 import { PollResultsSection } from '@/components/retrospectify/PollResultsSection';
 import { RetroSection } from '@/components/retrospectify/RetroSection';
@@ -18,18 +18,18 @@ import { Toaster } from '@/components/ui/toaster';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Card, CardHeader, CardContent, CardFooter, CardDescription, CardTitle } from '@/components/ui/card'; // Added CardTitle
-import { Button } from '@/components/ui/button'; // Import Button
-import { Users, LogOut, ShieldCheck, Info, Settings, PackageSearch, Loader2, Send, Star } from 'lucide-react'; // Import Users, LogOut, ShieldCheck, Info, Settings icons, Send
-import ProtectedRoute from '@/components/auth/ProtectedRoute'; // Import ProtectedRoute
-import { useAuth } from '@/context/AuthContext'; // Import useAuth
-import { auth, db } from '@/lib/firebase'; // Import auth and db
-import { getGravatarUrl, cn } from '@/lib/utils'; // Import Gravatar utility
-import { APP_ROLES, TEAM_ROLES } from '@/lib/types'; // Import APP_ROLES
+import { Card, CardHeader, CardContent, CardFooter, CardDescription, CardTitle } from '@/components/ui/card'; 
+import { Button } from '@/components/ui/button'; 
+import { Users, LogOut, ShieldCheck, Info, Settings, PackageSearch, Loader2, Send, Star } from 'lucide-react'; 
+import ProtectedRoute from '@/components/auth/ProtectedRoute'; 
+import { useAuth } from '@/context/AuthContext'; 
+import { auth, db } from '@/lib/firebase'; 
+import { getGravatarUrl, cn } from '@/lib/utils'; 
+import { APP_ROLES, TEAM_ROLES } from '@/lib/types'; 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { generateRetroReport } from '@/ai/flows/generate-retro-report';
-import { Label } from '@/components/ui/label'; // Added Label import
+import { Label } from '@/components/ui/label'; 
 import {
   Accordion,
   AccordionContent,
@@ -40,12 +40,11 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 
-const mockTeamId = "mock-team-123"; // Define a mock team ID for demo data
+const mockTeamId = "mock-team-123"; 
 
-// Main component content refactored
 function RetroSpectifyPageContent() {
-  const { currentUser, loading: authLoading } = useAuth(); // Get user from AuthContext
-  const router = useRouter(); // Get router instance
+  const { currentUser, loading: authLoading } = useAuth(); 
+  const router = useRouter(); 
   const [retroItems, setRetroItems] = useState<RetroItem[]>([]);
   const [pollResponses, setPollResponses] = useState<PollResponse[]>([]);
   const [appUser, setAppUser] = useState<User | null>(null);
@@ -61,8 +60,7 @@ function RetroSpectifyPageContent() {
   const [userTeams, setUserTeams] = useState<Team[]>([]);
   const [showTeamSelector, setShowTeamSelector] = useState(false);
 
-  // State for Scrum Master tools
-  const [teamDetails, setTeamDetails] = useState<Team | null>(null); // For current team details including SM
+  const [teamDetails, setTeamDetails] = useState<Team | null>(null); 
   const [teamMembersForScrumMasterSelection, setTeamMembersForScrumMasterSelection] = useState<User[]>([]);
   const [selectedNextScrumMasterUid, setSelectedNextScrumMasterUid] = useState<string | null>(null);
   const [isEndingRetro, setIsEndingRetro] = useState(false);
@@ -72,7 +70,6 @@ function RetroSpectifyPageContent() {
   console.log("[Page Lifecycle] RetroSpectifyPageContent rendering. Auth loading:", authLoading, "Current user:", currentUser ? currentUser.uid : 'none', "Active Team ID:", activeTeamId);
 
 
-  // Listen for demo mode changes
   useEffect(() => {
     console.log("[Effect] Setting up demo mode listener.");
     const configDocRef = doc(db, 'config', 'global');
@@ -83,11 +80,11 @@ function RetroSpectifyPageContent() {
         setIsDemoMode(configData.isDemoModeEnabled);
       } else {
         console.log("[Effect] Demo mode config not found, defaulting to false.");
-        setIsDemoMode(false); // Default to false if doc doesn't exist
+        setIsDemoMode(false); 
       }
     }, (error) => {
       console.error("[Effect] Error listening to demo mode config:", error);
-      setIsDemoMode(false); // Fallback on error
+      setIsDemoMode(false); 
     });
     return () => {
       console.log("[Effect Cleanup] Demo mode listener unsubscribing.");
@@ -96,7 +93,6 @@ function RetroSpectifyPageContent() {
   }, []);
 
 
-  // Fetch user data, teams, and set active team
   useEffect(() => {
     console.log("[Effect] Auth state or currentUser changed. Current user UID:", currentUser?.uid);
     if (authLoading) {
@@ -119,7 +115,7 @@ function RetroSpectifyPageContent() {
 
         if (userDocSnap.exists()) {
           const userData = userDocSnap.data();
-          const userTeamIds = userData.teamIds || []; // Ensure teamIds is always an array
+          const userTeamIds = userData.teamIds || []; 
           console.log(`[Effect] User ${currentUser.uid} data from Firestore:`, userData, "User Team IDs:", userTeamIds);
 
           const resolvedUser: User = {
@@ -134,7 +130,6 @@ function RetroSpectifyPageContent() {
           console.log("[Effect] AppUser set:", resolvedUser);
 
 
-          // Fetch user's teams
           const fetchedTeams: Team[] = [];
           if (resolvedUser.teamIds && resolvedUser.teamIds.length > 0) {
             console.log("[Effect] User has teamIds:", resolvedUser.teamIds);
@@ -176,7 +171,7 @@ function RetroSpectifyPageContent() {
             } else {
                 setShowTeamSelector(true);
             }
-          } else { // No teams
+          } else { 
             console.log("[Effect] User has no teams.");
              if (!isDemoMode) {
                 setActiveTeamId(null);
@@ -223,7 +218,6 @@ function RetroSpectifyPageContent() {
   }, [currentUser, authLoading, router, toast, isDemoMode]);
 
 
-  // Fetch active team details (for scrum master info) and members for SM selection
   useEffect(() => {
     if (!activeTeamId || (isDemoMode && activeTeamId === mockTeamId)) {
       setTeamDetails(null);
@@ -233,17 +227,15 @@ function RetroSpectifyPageContent() {
 
     const fetchTeamAndMembers = async () => {
       try {
-        // Fetch team details
         const teamDocRef = doc(db, 'teams', activeTeamId);
         const teamDocSnap = await getDoc(teamDocRef);
         if (teamDocSnap.exists()) {
           const teamData = { id: teamDocSnap.id, ...teamDocSnap.data() } as Team;
           setTeamDetails(teamData);
 
-          // Fetch members of this team
           if (teamData.members && teamData.members.length > 0) {
             const memberDetails: User[] = [];
-            const memberUIDs = Object.keys(teamData.memberRoles); // Assuming memberRoles keys are UIDs
+            const memberUIDs = Object.keys(teamData.memberRoles); 
             
             const userChunks: string[][] = [];
             for (let i = 0; i < memberUIDs.length; i += 30) {
@@ -261,7 +253,7 @@ function RetroSpectifyPageContent() {
                     name: uData.displayName || uData.email?.split('@')[0] || 'User',
                     email: uData.email || 'unknown@example.com',
                     avatarUrl: uData.avatarUrl || getGravatarUrl(uData.email, 100)!,
-                    role: uData.role || APP_ROLES.MEMBER, // App role
+                    role: uData.role || APP_ROLES.MEMBER, 
                     teamIds: uData.teamIds || [],
                   });
                 });
@@ -287,7 +279,6 @@ function RetroSpectifyPageContent() {
   }, [activeTeamId, isDemoMode, toast]);
 
 
-  // Subscribe to active team's retro items and poll responses
  useEffect(() => {
     console.log(`[Effect] Dependency change for listeners. isDemoMode: ${isDemoMode}, activeTeamId: ${activeTeamId}, appUser: ${appUser ? appUser.id : 'null'}`);
     
@@ -296,14 +287,14 @@ function RetroSpectifyPageContent() {
       setRetroItems([]);
       setPollResponses([]);
       setHasSubmitted(false);
-      return; // Exit if no active team or user
+      return; 
     }
 
     if (isDemoMode && activeTeamId === mockTeamId) {
         console.log("[Effect] Demo mode active for mockTeamId. Listeners will not be set up for Firestore.");
-        setRetroItems([]); // Clear any existing items
-        setPollResponses([]); // Clear any existing responses
-        setHasSubmitted(false); // Reset submission state
+        setRetroItems([]); 
+        setPollResponses([]); 
+        setHasSubmitted(false); 
         return; 
     }
     
@@ -365,7 +356,6 @@ function RetroSpectifyPageContent() {
 }, [activeTeamId, appUser, toast, isDemoMode]);
 
 
-  // Recalculate hasSubmitted if pollResponses change
   useEffect(() => {
      if (!appUser || !activeTeamId || (isDemoMode && activeTeamId === mockTeamId)) return;
     const userResponseExists = pollResponses.some(resp => resp.author.id === appUser.id);
@@ -374,7 +364,6 @@ function RetroSpectifyPageContent() {
   }, [pollResponses, appUser, activeTeamId, isDemoMode]);
 
 
-  // Memoize the current user's response for editing and rating adjustment
   const currentUserResponse = useMemo(() => {
      if (!appUser || !activeTeamId) return undefined;
     const response = pollResponses.find(resp => resp.author.id === appUser.id);
@@ -383,7 +372,6 @@ function RetroSpectifyPageContent() {
   }, [pollResponses, appUser, activeTeamId]);
 
 
-  // Derived state for showing poll/results
   const shouldShowResults = useMemo(() => {
     const show = !isEditingPoll && hasSubmitted;
     console.log(`[Memo] shouldShowResults: ${show} (isEditingPoll: ${isEditingPoll}, hasSubmitted: ${hasSubmitted})`);
@@ -397,7 +385,6 @@ function RetroSpectifyPageContent() {
   }, [hasSubmitted, isEditingPoll]);
 
 
-  // Function to remove existing AI-generated items for a specific poll response
   const removeExistingPollItems = useCallback(async (responseId: string) => {
        if (!activeTeamId || (isDemoMode && activeTeamId === mockTeamId)) {
            if (isDemoMode) toast({ title: "Demo Mode", description: "Skipping cleanup of previous items."});
@@ -447,7 +434,7 @@ function RetroSpectifyPageContent() {
                  timestamp: serverTimestamp(),
                  category: category,
                  isFromPoll: true,
-                 teamId: activeTeamId, // Store teamId in the item
+                 teamId: activeTeamId, 
              });
               console.log(`[Callback] Added rating-only item to Firestore with ID: ${newItemRef.id}`);
              toast({
@@ -479,7 +466,7 @@ function RetroSpectifyPageContent() {
                     timestamp: serverTimestamp(),
                     category: categorizedSentence.category,
                     isFromPoll: true,
-                    teamId: activeTeamId, // Store teamId
+                    teamId: activeTeamId, 
                 });
             });
             await batch.commit();
@@ -504,7 +491,7 @@ function RetroSpectifyPageContent() {
                timestamp: serverTimestamp(),
                category: 'discuss',
                isFromPoll: true,
-               teamId: activeTeamId, // Store teamId
+               teamId: activeTeamId, 
              });
              console.log(`[Callback] Added full justification as 'discuss' item to Firestore with ID: ${newItemRef.id}`);
              toast({ title: isEditingPoll ? "Feedback Updated" : "Feedback Added", description: "Your feedback couldn't be auto-categorized by sentence, added to 'Discussion Topics'." });
@@ -519,7 +506,7 @@ function RetroSpectifyPageContent() {
                timestamp: serverTimestamp(),
                category: 'discuss',
                isFromPoll: true,
-               teamId: activeTeamId, // Store teamId
+               teamId: activeTeamId, 
            });
            console.log(`[Callback] Added fallback 'discuss' item to Firestore due to AI error. ID: ${newItemRef.id}`);
       }
@@ -536,7 +523,7 @@ function RetroSpectifyPageContent() {
       if (isDemoMode && activeTeamId === mockTeamId) {
           console.log("[Callback] Demo mode: Simulating poll submit.");
           toast({ title: "Demo Mode", description: "Poll submission simulated."});
-          setHasSubmitted(true); // Simulate submission
+          setHasSubmitted(true); 
           setIsEditingPoll(false);
           return;
       }
@@ -710,17 +697,92 @@ function RetroSpectifyPageContent() {
       id: newReplyId, 
       author: { id: appUser.id, name: appUser.name, email: appUser.email, avatarUrl: appUser.avatarUrl, role: appUser.role },
       content: replyContent,
-      timestamp: new Date(), // Use client-side Date to avoid serverTimestamp in array issue
+      timestamp: new Date(), 
       isFromPoll: false, 
       category: parentItemData.category,
-      // replies array is not part of a new reply itself
     };
     await updateDoc(itemRef, {
-        replies: arrayUnion(newReplyObjectForArray) // Use arrayUnion for atomicity
+        replies: arrayUnion(newReplyObjectForArray) 
     });
     console.log(`[Callback] Added reply to item ${itemId} in Firestore.`);
     toast({ title: "Reply Added" });
   }, [appUser, activeTeamId, toast, isDemoMode]);
+
+  const handleEditReply = useCallback(async (itemId: string, replyId: string, newContent: string) => {
+    if (!appUser || !activeTeamId || (isDemoMode && activeTeamId === mockTeamId)) {
+        toast({ title: "Error", description: "Cannot edit reply in this state.", variant: "destructive" });
+        return;
+    }
+    console.log(`[Callback] handleEditReply for item ${itemId}, reply ${replyId}`);
+    const itemRef = doc(db, `teams/${activeTeamId}/retroItems`, itemId);
+    const itemDoc = await getDoc(itemRef);
+
+    if (!itemDoc.exists()) {
+        toast({ title: "Error", description: "Parent item not found.", variant: "destructive" });
+        return;
+    }
+    const currentItemData = itemDoc.data() as RetroItem;
+    const currentReplies = currentItemData.replies || [];
+    const replyIndex = currentReplies.findIndex(reply => reply.id === replyId);
+
+    if (replyIndex === -1) {
+        toast({ title: "Error", description: "Reply not found.", variant: "destructive" });
+        return;
+    }
+
+    if (currentReplies[replyIndex].author.id !== appUser.id) {
+        toast({ title: "Permission Denied", description: "You can only edit your own replies.", variant: "destructive" });
+        return;
+    }
+     if (replyIndex !== currentReplies.length -1) {
+        toast({ title: "Cannot Edit", description: "You can only edit the last reply on an item.", variant: "destructive" });
+        return;
+    }
+
+
+    const updatedReplies = currentReplies.map((reply, index) =>
+        index === replyIndex ? { ...reply, content: newContent, timestamp: new Date() } : reply
+    );
+
+    await updateDoc(itemRef, { replies: updatedReplies });
+    toast({ title: "Reply Updated" });
+}, [appUser, activeTeamId, toast, isDemoMode]);
+
+const handleDeleteReply = useCallback(async (itemId: string, replyId: string) => {
+    if (!appUser || !activeTeamId || (isDemoMode && activeTeamId === mockTeamId)) {
+        toast({ title: "Error", description: "Cannot delete reply in this state.", variant: "destructive" });
+        return;
+    }
+    console.log(`[Callback] handleDeleteReply for item ${itemId}, reply ${replyId}`);
+    const itemRef = doc(db, `teams/${activeTeamId}/retroItems`, itemId);
+    const itemDoc = await getDoc(itemRef);
+
+    if (!itemDoc.exists()) {
+        toast({ title: "Error", description: "Parent item not found.", variant: "destructive" });
+        return;
+    }
+    const currentItemData = itemDoc.data() as RetroItem;
+    const currentReplies = currentItemData.replies || [];
+    const replyIndex = currentReplies.findIndex(reply => reply.id === replyId);
+
+    if (replyIndex === -1) {
+        toast({ title: "Error", description: "Reply not found.", variant: "destructive" });
+        return;
+    }
+     if (currentReplies[replyIndex].author.id !== appUser.id) {
+        toast({ title: "Permission Denied", description: "You can only delete your own replies.", variant: "destructive" });
+        return;
+    }
+     if (replyIndex !== currentReplies.length -1) {
+        toast({ title: "Cannot Delete", description: "You can only delete the last reply on an item.", variant: "destructive" });
+        return;
+    }
+
+    const updatedReplies = currentReplies.filter(reply => reply.id !== replyId);
+    await updateDoc(itemRef, { replies: updatedReplies });
+    toast({ title: "Reply Deleted" });
+}, [appUser, activeTeamId, toast, isDemoMode]);
+
 
    const handleDeleteItem = useCallback(async (itemId: string) => {
      if (!appUser || !activeTeamId) {
@@ -927,7 +989,6 @@ function RetroSpectifyPageContent() {
         localStorage.removeItem('activeTeamName');
     };
 
-    // Function to handle "End Retrospective" from home page
     const handleEndRetrospectiveOnHomePage = async () => {
         if (!activeTeamId || !teamDetails || !appUser || !selectedNextScrumMasterUid) return;
         if (!(appUser.role === APP_ROLES.ADMIN || teamDetails.scrumMasterUid === appUser.id || teamDetails.owner === appUser.id)) {
@@ -955,11 +1016,8 @@ function RetroSpectifyPageContent() {
                 retroItems: retroItemsData,
                 currentScrumMaster: teamMembersForScrumMasterSelection.find(m => m.id === teamDetails.scrumMasterUid) || null,
             };
-            // The generateRetroReport flow will use the existing SM logic if nextScrumMaster is not explicitly passed from here.
-            // We *are* passing it if selectedNextScrumMasterUid is set.
             const reportOutput = await generateRetroReport({
                 ...reportInput,
-                // Pass the selected next scrum master directly to the flow if available
                 nextScrumMaster: teamMembersForScrumMasterSelection.find(m => m.id === selectedNextScrumMasterUid) || undefined,
             });
 
@@ -981,7 +1039,6 @@ function RetroSpectifyPageContent() {
             pollResponsesSnapshot.forEach(doc => batch.delete(doc.ref));
             retroItemsSnapshot.forEach(doc => batch.delete(doc.ref));
             
-            // Use the pre-selected next Scrum Master
             if (selectedNextScrumMasterUid && selectedNextScrumMasterUid !== teamDetails.scrumMasterUid) {
                  batch.update(doc(db, 'teams', teamDetails.id), { scrumMasterUid: selectedNextScrumMasterUid });
                  const smUser = teamMembersForScrumMasterSelection.find(m => m.id === selectedNextScrumMasterUid);
@@ -996,9 +1053,7 @@ function RetroSpectifyPageContent() {
             toast({ title: "Retrospective Data Cleared", description: "Items and votes for this team have been cleared."});
 
             toast({ title: "Retrospective Completed!", description: "Report generated and process finished.", duration: 7000 });
-            // Reset selection
             setSelectedNextScrumMasterUid(null);
-             // Refetch team details to update UI for scrum master
             const updatedTeamDocSnap = await getDoc(doc(db, 'teams', activeTeamId));
             if (updatedTeamDocSnap.exists()) {
                 setTeamDetails({ id: updatedTeamDocSnap.id, ...updatedTeamDocSnap.data() } as Team);
@@ -1085,7 +1140,6 @@ function RetroSpectifyPageContent() {
   console.log(`[Render] Can interact with current team (${activeTeamId}):`, canInteractWithCurrentTeam, "isDemoMode:", isDemoMode);
   console.log(`[Render] Current appUser teamIds:`, appUser.teamIds, "Active Team ID:", activeTeamId);
 
-  // Determine if current user is the Scrum Master for the active team
   const isCurrentUserScrumMaster = teamDetails?.scrumMasterUid === appUser.id;
 
 
@@ -1102,7 +1156,7 @@ function RetroSpectifyPageContent() {
                          <PackageSearch className="mr-2 h-4 w-4" /> Change Team
                      </Button>
                  )}
-                  {appUser.role === APP_ROLES.ADMIN || (userTeams.length > 0 && !isDemoMode )? ( // Show "My Teams" if admin OR has teams (and not demo)
+                  {appUser.role === APP_ROLES.ADMIN || (userTeams.length > 0 && !isDemoMode )? ( 
                      <Link href="/teams" passHref>
                          <Button variant="outline" size="sm">
                              <Users className="mr-2 h-4 w-4" /> My Teams
@@ -1171,7 +1225,6 @@ function RetroSpectifyPageContent() {
               </Card>
         )}
 
-         {/* Scrum Master Tools Section */}
         {activeTeamId && !isDemoMode && teamDetails && (appUser.role === APP_ROLES.ADMIN || teamDetails.scrumMasterUid === appUser.id || teamDetails.owner === appUser.id) && (
             <Accordion type="single" collapsible className="w-full mb-6" defaultValue='scrum-master-tools'>
                 <AccordionItem value="scrum-master-tools" className="border-b-0">
@@ -1286,6 +1339,8 @@ function RetroSpectifyPageContent() {
                         currentUser={appUser}
                         onAddItem={handleAddItem('well')}
                         onAddReply={handleAddReply}
+                        onEditReply={handleEditReply}
+                        onDeleteReply={handleDeleteReply}
                         onMoveItem={handleMoveItem}
                         onEditItem={handleEditItem}
                         onDeleteItem={handleDeleteItem}
@@ -1302,6 +1357,8 @@ function RetroSpectifyPageContent() {
                         currentUser={appUser}
                         onAddItem={handleAddItem('improve')}
                         onAddReply={handleAddReply}
+                        onEditReply={handleEditReply}
+                        onDeleteReply={handleDeleteReply}
                         onMoveItem={handleMoveItem}
                         onEditItem={handleEditItem}
                         onDeleteItem={handleDeleteItem}
@@ -1318,6 +1375,8 @@ function RetroSpectifyPageContent() {
                         currentUser={appUser}
                         onAddItem={handleAddItem('discuss')}
                         onAddReply={handleAddReply}
+                        onEditReply={handleEditReply}
+                        onDeleteReply={handleDeleteReply}
                         onMoveItem={handleMoveItem}
                         onEditItem={handleEditItem}
                         onDeleteItem={handleDeleteItem}
@@ -1334,6 +1393,8 @@ function RetroSpectifyPageContent() {
                         currentUser={appUser}
                         onAddItem={handleAddItem('action')}
                         onAddReply={handleAddReply}
+                        onEditReply={handleEditReply}
+                        onDeleteReply={handleDeleteReply}
                         onMoveItem={handleMoveItem}
                         onEditItem={handleEditItem}
                         onDeleteItem={handleDeleteItem}
@@ -1370,6 +1431,7 @@ export default function RetroSpectifyPage() {
         </ProtectedRoute>
     );
 }
+
 
 
 
