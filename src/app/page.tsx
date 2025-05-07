@@ -24,12 +24,18 @@ import { Users, LogOut, ShieldCheck, Info, Settings, PackageSearch, Loader2, Sen
 import ProtectedRoute from '@/components/auth/ProtectedRoute'; // Import ProtectedRoute
 import { useAuth } from '@/context/AuthContext'; // Import useAuth
 import { auth, db } from '@/lib/firebase'; // Import auth and db
-import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
+import { getGravatarUrl, cn } from '@/lib/utils'; // Import Gravatar utility
 import { APP_ROLES, TEAM_ROLES } from '@/lib/types'; // Import APP_ROLES
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { generateRetroReport } from '@/ai/flows/generate-retro-report';
 import { Label } from '@/components/ui/label'; // Added Label import
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 
 const mockTeamId = "mock-team-123"; // Define a mock team ID for demo data
@@ -1093,7 +1099,7 @@ function RetroSpectifyPageContent() {
                          <PackageSearch className="mr-2 h-4 w-4" /> Change Team
                      </Button>
                  )}
-                  {(userTeams.length > 0 || appUser.role === APP_ROLES.ADMIN) && !isDemoMode && (
+                  {(appUser.role === APP_ROLES.ADMIN || userTeams.length > 1) && !isDemoMode && (
                      <Link href="/teams" passHref>
                          <Button variant="outline" size="sm">
                              <Users className="mr-2 h-4 w-4" /> My Teams
@@ -1164,73 +1170,81 @@ function RetroSpectifyPageContent() {
 
          {/* Scrum Master Tools Section */}
         {activeTeamId && !isDemoMode && teamDetails && (appUser.role === APP_ROLES.ADMIN || teamDetails.scrumMasterUid === appUser.id || teamDetails.owner === appUser.id) && (
-            <Card className="mb-6 shadow-md border-accent/30 bg-accent/5">
-                <CardHeader>
-                    <CardTitle className="text-lg font-semibold text-accent-foreground flex items-center">
-                        <Star className="mr-2 h-5 w-5 text-accent fill-current" /> Scrum Master Tools
-                    </CardTitle>
-                    <CardDescription>
-                        {teamDetails.scrumMasterUid === appUser.id ? "You are the current Scrum Master." : teamDetails.owner === appUser.id ? "As team owner, you can manage the retrospective." : "As an admin, you can manage the retrospective."}
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <div>
-                        <Label htmlFor="nextScrumMaster" className="font-medium">Select Next Scrum Master</Label>
-                        <Select
-                            value={selectedNextScrumMasterUid || "none"}
-                            onValueChange={(value) => setSelectedNextScrumMasterUid(value === "none" ? null : value)}
-                            disabled={isEndingRetro || teamMembersForScrumMasterSelection.length === 0}
-                        >
-                            <SelectTrigger id="nextScrumMaster" className="w-full sm:w-[300px] mt-1">
-                                <SelectValue placeholder="Choose next Scrum Master..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="none">-- No specific selection (team decides/random) --</SelectItem>
-                                {teamMembersForScrumMasterSelection.map(member => (
-                                    <SelectItem key={member.id} value={member.id} disabled={member.id === teamDetails.scrumMasterUid}>
-                                        <div className="flex items-center gap-2">
-                                            <Avatar className="h-6 w-6">
-                                                <AvatarImage src={member.avatarUrl} alt={member.name} data-ai-hint="avatar profile picture"/>
-                                                <AvatarFallback>{member.name.charAt(0).toUpperCase()}</AvatarFallback>
-                                            </Avatar>
-                                            <span>{member.name} {member.id === teamDetails.scrumMasterUid && "(Current SM)"}</span>
-                                        </div>
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground mt-1">The selected user will be assigned as Scrum Master when the retrospective ends.</p>
-                    </div>
-                </CardContent>
-                 {selectedNextScrumMasterUid && (
-                    <CardFooter className="flex justify-end">
-                        <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                                <Button variant="destructive" disabled={isEndingRetro}>
-                                    {isEndingRetro ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                                    {isEndingRetro ? "Ending Retro..." : "End Retrospective & Assign SM"}
-                                </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                                <AlertDialogHeader>
-                                    <AlertDialogTitle>Confirm End Retrospective</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                        This will generate a report, email it to members, clear current data, and assign
-                                        <span className="font-semibold"> {teamMembersForScrumMasterSelection.find(m=>m.id === selectedNextScrumMasterUid)?.name || 'the selected user'} </span>
-                                        as the new Scrum Master. Are you sure?
-                                    </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                    <AlertDialogCancel onClick={() => setSelectedNextScrumMasterUid(null)} disabled={isEndingRetro}>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={handleEndRetrospectiveOnHomePage} disabled={isEndingRetro} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                                        Yes, End Retrospective
-                                    </AlertDialogAction>
-                                </AlertDialogFooter>
-                            </AlertDialogContent>
-                        </AlertDialog>
-                    </CardFooter>
-                 )}
-            </Card>
+            <Accordion type="single" collapsible className="w-full mb-6">
+                <AccordionItem value="scrum-master-tools" className="border-b-0">
+                    <Card className="shadow-md border-accent/30 bg-accent/5">
+                         <CardHeader className="pb-2 pt-4 px-6">
+                             <AccordionTrigger className="flex-grow p-0 hover:no-underline justify-start w-full">
+                                <CardTitle className="text-lg font-semibold text-accent-foreground flex items-center">
+                                    <Star className="mr-2 h-5 w-5 text-accent fill-current" /> Scrum Master Tools
+                                </CardTitle>
+                             </AccordionTrigger>
+                             <CardDescription>
+                                {teamDetails.scrumMasterUid === appUser.id ? "You are the current Scrum Master." : teamDetails.owner === appUser.id ? "As team owner, you can manage the retrospective." : "As an admin, you can manage the retrospective."}
+                             </CardDescription>
+                         </CardHeader>
+                         <AccordionContent>
+                             <CardContent className="space-y-4 pt-2">
+                                <div>
+                                    <Label htmlFor="nextScrumMaster" className="font-medium">Select Next Scrum Master</Label>
+                                    <Select
+                                        value={selectedNextScrumMasterUid || "none"}
+                                        onValueChange={(value) => setSelectedNextScrumMasterUid(value === "none" ? null : value)}
+                                        disabled={isEndingRetro || teamMembersForScrumMasterSelection.length === 0}
+                                    >
+                                        <SelectTrigger id="nextScrumMaster" className="w-full sm:w-[300px] mt-1">
+                                            <SelectValue placeholder="Choose next Scrum Master..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="none">-- No specific selection (team decides/random) --</SelectItem>
+                                            {teamMembersForScrumMasterSelection.map(member => (
+                                                <SelectItem key={member.id} value={member.id} disabled={member.id === teamDetails.scrumMasterUid}>
+                                                    <div className="flex items-center gap-2">
+                                                        <Avatar className="h-6 w-6">
+                                                            <AvatarImage src={member.avatarUrl} alt={member.name} data-ai-hint="avatar profile picture"/>
+                                                            <AvatarFallback>{member.name.charAt(0).toUpperCase()}</AvatarFallback>
+                                                        </Avatar>
+                                                        <span>{member.name} {member.id === teamDetails.scrumMasterUid && "(Current SM)"}</span>
+                                                    </div>
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <p className="text-xs text-muted-foreground mt-1">The selected user will be assigned as Scrum Master when the retrospective ends.</p>
+                                </div>
+                            </CardContent>
+                            {selectedNextScrumMasterUid && (
+                                <CardFooter className="flex justify-end">
+                                    <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                            <Button variant="destructive" disabled={isEndingRetro}>
+                                                {isEndingRetro ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                                                {isEndingRetro ? "Ending Retro..." : "End Retrospective & Assign SM"}
+                                            </Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                                <AlertDialogTitle>Confirm End Retrospective</AlertDialogTitle>
+                                                <AlertDialogDescription>
+                                                    This will generate a report, email it to members, clear current data, and assign
+                                                    <span className="font-semibold"> {teamMembersForScrumMasterSelection.find(m=>m.id === selectedNextScrumMasterUid)?.name || 'the selected user'} </span>
+                                                    as the new Scrum Master. Are you sure?
+                                                </AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                                <AlertDialogCancel onClick={() => setSelectedNextScrumMasterUid(null)} disabled={isEndingRetro}>Cancel</AlertDialogCancel>
+                                                <AlertDialogAction onClick={handleEndRetrospectiveOnHomePage} disabled={isEndingRetro} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                                    Yes, End Retrospective
+                                                </AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
+                                </CardFooter>
+                            )}
+                        </AccordionContent>
+                    </Card>
+                </AccordionItem>
+            </Accordion>
         )}
 
 
@@ -1353,5 +1367,6 @@ export default function RetroSpectifyPage() {
         </ProtectedRoute>
     );
 }
+
 
 
