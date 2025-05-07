@@ -15,11 +15,11 @@ interface RetroSectionProps {
   category: Category; // Explicitly pass the category
   items: RetroItem[];
   currentUser: User;
-  onAddItem: (content: string) => void;
-  onAddReply: (itemId: string, replyContent: string) => void;
-  onMoveItem: (itemId: string, targetCategory: Category) => void; // Add move handler
-  onEditItem?: (itemId: string, newContent: string) => void; // Add edit handler
-  onDeleteItem?: (itemId: string) => void;
+  onAddItem: (content: string) => Promise<void>; // Changed to expect a Promise
+  onAddReply: (itemId: string, replyContent: string) => Promise<void>;
+  onMoveItem: (itemId: string, targetCategory: Category) => Promise<void>;
+  onEditItem?: (itemId: string, newContent: string) => Promise<void>;
+  onDeleteItem?: (itemId: string) => Promise<void>;
   allowAddingItems?: boolean;
   className?: string;
   draggingItemId?: string | null; // ID of the item currently being dragged
@@ -36,7 +36,7 @@ export function RetroSection({
   onAddItem,
   onAddReply,
   onMoveItem,
-  onEditItem, // Receive edit handler
+  onEditItem,
   onDeleteItem,
   allowAddingItems = true,
   className,
@@ -48,10 +48,10 @@ export function RetroSection({
   const [newItemContent, setNewItemContent] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
 
-  const handleAddItemSubmit = (e: FormEvent) => {
+  const handleAddItemSubmit = async (e: FormEvent) => { // Made async
     e.preventDefault();
     if (newItemContent.trim()) {
-      onAddItem(newItemContent);
+      await onAddItem(newItemContent); // Await the call
       setNewItemContent('');
     }
   };
@@ -68,7 +68,7 @@ export function RetroSection({
      }
   };
 
-  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+  const handleDrop = async (e: DragEvent<HTMLDivElement>) => { // Made async
     e.preventDefault();
     setIsDragOver(false);
     const dataString = e.dataTransfer.getData('application/json');
@@ -85,21 +85,15 @@ export function RetroSection({
             return;
         }
         
-        // Prevent dropping onto the same category (can also be handled by parent)
-        if (originalCategory === category) { // `category` here is the target category of this section
+        if (originalCategory === category) {
             console.log("Item dropped onto its own category. No action taken by RetroSection.");
             return;
         }
         
-        // Call the parent's move handler.
-        // The parent (page.tsx) will use `droppedItemId` to find the item
-        // from its global `retroItems` state, check permissions, and update Firestore.
-        onMoveItem(droppedItemId, category); // `category` is the targetCategory
+        await onMoveItem(droppedItemId, category); // Await the call
 
     } catch (error) {
-        // This catch block is for JSON.parse errors or if onMoveItem itself throws an unhandled error.
-        // The error in the prompt "ReferenceError: Can't find variable: retroItems" was due to incorrect variable access before this change.
-        console.error("Failed to parse dropped data or call onMoveItem in RetroSection:", error);
+        console.error("Failed to parse dropped data or execute move in RetroSection:", error);
     }
   };
 
@@ -109,7 +103,7 @@ export function RetroSection({
        className={cn(
          "flex flex-col h-full shadow-md transition-colors duration-200",
          className,
-         isDragOver && "border-primary border-dashed ring-2 ring-primary ring-offset-2 bg-primary/10" // Highlight on drag over
+         isDragOver && "border-primary border-dashed ring-2 ring-primary ring-offset-2 bg-primary/10"
        )}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -127,7 +121,7 @@ export function RetroSection({
             item={item}
             currentUser={currentUser}
             onAddReply={onAddReply}
-            onEditItem={onEditItem} // Pass edit handler
+            onEditItem={onEditItem}
             onDeleteItem={onDeleteItem}
             onDragStartItem={onDragStartItem}
             onDragEndItem={onDragEndItem}
@@ -161,4 +155,3 @@ export function RetroSection({
     </Card>
   );
 }
-
