@@ -20,6 +20,9 @@ import type { AdminUserDisplay, AppRole } from '@/lib/types';
 import { APP_ROLES } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const PROD_BASE_URL = 'https://retro.patchwork.ai';
+
 function AdminUserDetailPageContent() {
   const { userId } = useParams<{ userId: string }>();
   const { currentUser, loading: authLoading } = useAuth();

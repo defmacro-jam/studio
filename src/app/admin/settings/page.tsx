@@ -19,6 +19,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 const CONFIG_COLLECTION = 'config';
 const GLOBAL_CONFIG_DOC_ID = 'global';
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const PROD_BASE_URL = 'https://retro.patchwork.ai';
+
 function AdminSettingsPageContent() {
   const { currentUser, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -108,7 +111,8 @@ function AdminSettingsPageContent() {
         title: "Settings Saved",
         description: "Application settings have been updated.", // Generic message
       });
-      router.push('/'); // Redirect to home page after successful save
+      const appBaseUrl = IS_PRODUCTION ? PROD_BASE_URL : '';
+      router.push(`${appBaseUrl}/`); // Redirect to home page after successful save
     } catch (err) {
       console.error("Error saving app settings:", err);
       setError("Failed to save settings.");

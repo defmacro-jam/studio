@@ -21,6 +21,9 @@ interface TeamInfo extends Pick<TeamData, 'id' | 'name' | 'owner'> {
   memberCount: number;
 }
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const PROD_BASE_URL = 'https://retro.patchwork.ai';
+
 function TeamsListPageContent() {
   const { currentUser } = useAuth();
   const [teams, setTeams] = useState<TeamInfo[]>([]);
@@ -69,7 +72,7 @@ function TeamsListPageContent() {
       }
 
       const userData = userDocSnap.data();
-      const teamIds = userData?.teamIds || userData?.teams || []; // Check for both teamIds and teams for backward compatibility
+      const teamIds = userData?.teamIds || []; // Standardize on teamIds
 
       if (teamIds.length === 0) {
         setTeams([]);
@@ -94,7 +97,7 @@ function TeamsListPageContent() {
                 teamsData.push({
                     id: docSnap.id,
                     name: data.name || 'Unnamed Team', // Fallback name
-                    memberCount: data.members?.length || 0,
+                    memberCount: Object.keys(data.memberRoles || {}).length, // Count members from memberRoles
                     owner: data.owner, // Include owner UID
                 });
             }
@@ -142,17 +145,16 @@ function TeamsListPageContent() {
         const teamDocSnap = await getDoc(teamDocRef);
         if (teamDocSnap.exists()) {
             const teamData = teamDocSnap.data() as TeamData;
-            const memberUids = teamData.members || [];
+            const memberUids = Object.keys(teamData.memberRoles || {}); // Get UIDs from memberRoles
 
             // Update each member's user document by removing the teamId from their 'teamIds' (or 'teams') array
-            // This requires a read for each user doc then an update, consider Cloud Function for large teams
             for (const uid of memberUids) {
                 const userDocRef = doc(db, 'users', uid);
                 const userDocSnap = await getDoc(userDocRef);
                 if (userDocSnap.exists()) {
-                    const currentTeams = userDocSnap.data().teamIds || userDocSnap.data().teams || [];
+                    const currentTeams = userDocSnap.data().teamIds || [];
                     const updatedTeams = currentTeams.filter((id: string) => id !== teamId);
-                    batch.update(userDocRef, { teamIds: updatedTeams }); // Standardize on teamIds
+                    batch.update(userDocRef, { teamIds: updatedTeams }); 
                 }
             }
         } else {
@@ -188,7 +190,7 @@ function TeamsListPageContent() {
     <div className="container mx-auto p-4 md:p-8">
       <header className="mb-8 flex justify-between items-center flex-wrap gap-4"> {/* Added flex-wrap and gap */}
           {/* Go Home Button */}
-          <Link href="/" passHref>
+          <Link href={IS_PRODUCTION ? PROD_BASE_URL : "/"} passHref>
             <Button variant="outline" size="sm">
               <Home className="mr-2 h-4 w-4" /> Go Home
             </Button>

@@ -16,11 +16,13 @@ import { Loader2, Users, X as CancelIcon, ShieldAlert } from 'lucide-react'; // 
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { TEAM_ROLES, APP_ROLES, type User as AppUser } from '@/lib/types'; // Import roles and AppUser
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const PROD_BASE_URL = 'https://retro.patchwork.ai';
+
 function CreateTeamPageContent() {
   const [teamName, setTeamName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // existingTeamNames state removed as admin check is sufficient for global uniqueness
   const { currentUser } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
@@ -38,7 +40,8 @@ function CreateTeamPageContent() {
                 } else {
                     console.warn("Current user document not found in Firestore for role check.");
                     toast({ title: "Error", description: "Could not verify user role.", variant: "destructive" });
-                    router.push('/'); // Redirect if user data can't be fetched
+                    const appBaseUrl = IS_PRODUCTION ? PROD_BASE_URL : '';
+                    router.push(`${appBaseUrl}/`); // Redirect if user data can't be fetched
                 }
             }
             setAuthChecked(true);
@@ -51,7 +54,8 @@ function CreateTeamPageContent() {
     useEffect(() => {
         if (authChecked && appUser && appUser.role !== APP_ROLES.ADMIN) {
             toast({ title: "Access Denied", description: "Only administrators can create teams.", variant: "destructive" });
-            router.push('/');
+            const appBaseUrl = IS_PRODUCTION ? PROD_BASE_URL : '';
+            router.push(`${appBaseUrl}/`);
         }
     }, [authChecked, appUser, router, toast]);
 
@@ -96,7 +100,7 @@ function CreateTeamPageContent() {
             createdAt: serverTimestamp(),
             createdBy: currentUser.uid, // UID of the creator
             owner: currentUser.uid, // Set creator as the owner
-            members: [currentUser.uid], // Add creator's UID as the first member
+            // members: [currentUser.uid], // Deprecated, use memberRoles
             memberRoles: { // Initialize roles map with the creator as Owner
                 [currentUser.uid]: TEAM_ROLES.OWNER,
             },
@@ -118,7 +122,8 @@ function CreateTeamPageContent() {
         title: 'Team Created!',
         description: `Team "${trimmedTeamName}" has been successfully created.`,
       });
-      router.push(`/teams/${teamDocRef.id}`); // Redirect to the new team page using the generated ID
+      const appBaseUrl = IS_PRODUCTION ? PROD_BASE_URL : '';
+      router.push(`${appBaseUrl}/teams/${teamDocRef.id}`); // Redirect to the new team page using the generated ID
 
     } catch (err: any) {
       console.error('Team creation error:', err);
@@ -157,7 +162,10 @@ function CreateTeamPageContent() {
                      <p className="text-destructive-foreground">Only administrators can create new teams.</p>
                 </CardContent>
                 <CardFooter>
-                     <Button variant="secondary" onClick={() => router.push('/')}>Go Home</Button>
+                     <Button variant="secondary" onClick={() => {
+                         const appBaseUrl = IS_PRODUCTION ? PROD_BASE_URL : '';
+                         router.push(`${appBaseUrl}/`);
+                     }}>Go Home</Button>
                 </CardFooter>
             </Card>
         </div>
@@ -197,7 +205,10 @@ function CreateTeamPageContent() {
             <Button
                 type="button"
                 variant="outline"
-                onClick={() => router.push('/teams')} // Navigate to the teams list page
+                onClick={() => {
+                    const appBaseUrl = IS_PRODUCTION ? PROD_BASE_URL : '';
+                    router.push(`${appBaseUrl}/teams`);
+                }}
                 disabled={loading}
                 className="w-full sm:w-auto" // Adjust width for responsiveness
             >

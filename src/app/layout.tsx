@@ -1,3 +1,4 @@
+
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
@@ -14,7 +15,11 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 });
 
+const PROD_BASE_URL = 'https://retro.patchwork.ai';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
 export const metadata: Metadata = {
+  metadataBase: IS_PRODUCTION ? new URL(PROD_BASE_URL) : undefined,
   title: 'RetroSpectify', // Updated App Name
   description: 'Team Retrospective App', // Updated Description
 };

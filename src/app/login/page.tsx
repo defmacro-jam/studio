@@ -16,6 +16,9 @@ import { LogIn } from 'lucide-react';
 import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, collection, query, where, getDocs, writeBatch } from 'firebase/firestore'; // Added Firestore functions
 import { TEAM_ROLES } from '@/lib/types'; // Added TEAM_ROLES
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const PROD_BASE_URL = 'https://retro.patchwork.ai';
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -60,7 +63,7 @@ export default function LoginPage() {
               const teamData = teamDocSnap.data();
               if (!currentTeamIds.includes(teamIdFromQuery)) {
                 batch.update(teamDocRef, {
-                  members: arrayUnion(user.uid),
+                  // members: arrayUnion(user.uid), // Deprecated
                   [`memberRoles.${user.uid}`]: TEAM_ROLES.MEMBER,
                   pendingMemberEmails: arrayRemove(loggedInUserEmail)
                 });
@@ -90,7 +93,7 @@ export default function LoginPage() {
 
             if (!isAlreadyMemberOrJustAdded) {
               batch.update(teamDoc.ref, {
-                members: arrayUnion(user.uid),
+                // members: arrayUnion(user.uid), // Deprecated
                 [`memberRoles.${user.uid}`]: TEAM_ROLES.MEMBER,
                 pendingMemberEmails: arrayRemove(loggedInUserEmail)
               });
@@ -133,7 +136,8 @@ export default function LoginPage() {
         title: 'Login Successful',
         description: 'Welcome back!',
       });
-      router.push('/'); // Redirect to the main page after successful login
+      const appBaseUrl = IS_PRODUCTION ? PROD_BASE_URL : '';
+      router.push(`${appBaseUrl}/`); // Redirect to the main page after successful login
     } catch (err: any) {
       console.error('Login error:', err);
       // Provide more user-friendly error messages

@@ -6,7 +6,7 @@ import { useState, type FormEvent, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation'; // Added useSearchParams
 import Link from 'next/link';
 import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore'; // Added updateDoc, arrayUnion, arrayRemove, getDoc
+import { doc, setDoc, serverTimestamp, updateDoc, arrayUnion, arrayRemove, getDoc, writeBatch } from 'firebase/firestore'; // Added writeBatch
 import { auth, db } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +16,9 @@ import { useToast } from '@/hooks/use-toast';
 import { UserPlus } from 'lucide-react';
 import { getGravatarUrl } from '@/lib/utils'; // Import Gravatar utility
 import { APP_ROLES, TEAM_ROLES } from '@/lib/types'; // Import APP_ROLES and TEAM_ROLES
+
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const PROD_BASE_URL = 'https://retro.patchwork.ai';
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
@@ -92,7 +95,9 @@ export default function SignupPage() {
 
       // Create user document in Firestore
       const userDocRef = doc(db, 'users', user.uid);
-      await setDoc(userDocRef, {
+      const batch = writeBatch(db);
+
+      batch.set(userDocRef, {
         uid: user.uid,
         email: userEmail, // Store normalized email
         displayName: userDisplayName,
@@ -106,22 +111,27 @@ export default function SignupPage() {
       if (teamIdToJoin) {
         const teamDocRef = doc(db, 'teams', teamIdToJoin);
         // Add user to team members and roles, remove from pending
-        await updateDoc(teamDocRef, {
-            members: arrayUnion(user.uid), // Keep this to update the members array
+        batch.update(teamDocRef, {
+            // members: arrayUnion(user.uid), // Deprecated, use memberRoles
             [`memberRoles.${user.uid}`]: TEAM_ROLES.MEMBER, // Assign default MEMBER role for the team
             pendingMemberEmails: arrayRemove(userEmail)
         });
+        
+        await batch.commit(); // Commit batch after both operations are defined
+
         toast({
           title: 'Joined Team!',
           description: `You've been added to the team. Welcome, ${userDisplayName}!`,
         });
       } else {
+          await batch.commit(); // Commit batch even if not joining a team
           toast({
             title: 'Signup Successful',
             description: `Welcome, ${userDisplayName}! Please verify your email.`,
           });
       }
-      router.push('/'); // Redirect to home or a 'please verify' page
+      const appBaseUrl = IS_PRODUCTION ? PROD_BASE_URL : '';
+      router.push(`${appBaseUrl}/`); // Redirect to home or a 'please verify' page
 
     } catch (err: any) {
       console.error('Signup error:', err);

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, type ReactNode } from 'react';
@@ -9,6 +10,9 @@ interface ProtectedRouteProps {
   children: ReactNode;
 }
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const PROD_BASE_URL = 'https://retro.patchwork.ai';
+
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { currentUser, loading } = useAuth();
   const router = useRouter();
@@ -16,7 +20,8 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   useEffect(() => {
     // If loading is finished and there's no user, redirect to login
     if (!loading && !currentUser) {
-      router.push('/login');
+      const appBaseUrl = IS_PRODUCTION ? PROD_BASE_URL : '';
+      router.push(`${appBaseUrl}/login`);
     }
   }, [currentUser, loading, router]);
 

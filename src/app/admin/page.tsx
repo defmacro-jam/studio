@@ -23,6 +23,8 @@ import { APP_ROLES } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 
 // EditUserDialog removed as editing moved to detail page
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const PROD_BASE_URL = 'https://retro.patchwork.ai';
 
 function AdminPageContent() {
   const { currentUser, loading: authLoading } = useAuth();
@@ -55,13 +57,15 @@ function AdminPageContent() {
           setIsAdmin(false);
           setError("Access Denied: You do not have permission to view this page.");
           toast({ title: "Access Denied", description: "Only administrators can access this page.", variant: "destructive" });
-          router.push('/'); // Redirect non-admins
+          const appBaseUrl = IS_PRODUCTION ? PROD_BASE_URL : '';
+          router.push(`${appBaseUrl}/`); // Redirect non-admins
         }
       } catch (err) {
         console.error("Error checking admin status:", err);
         setError("Failed to verify administrator status.");
         setIsAdmin(false);
-        router.push('/'); // Redirect on error
+        const appBaseUrl = IS_PRODUCTION ? PROD_BASE_URL : '';
+        router.push(`${appBaseUrl}/`); // Redirect on error
       }
     };
 
@@ -222,7 +226,10 @@ function AdminPageContent() {
                          <p className="text-destructive-foreground">{error || "You do not have permission to access this page."}</p>
                     </CardContent>
                     <CardFooter>
-                         <Button variant="secondary" onClick={() => router.push('/')}>Go Home</Button>
+                         <Button variant="secondary" onClick={() => {
+                             const appBaseUrl = IS_PRODUCTION ? PROD_BASE_URL : '';
+                             router.push(`${appBaseUrl}/`);
+                         }}>Go Home</Button>
                     </CardFooter>
                 </Card>
             </div>
@@ -234,7 +241,10 @@ function AdminPageContent() {
     <div className="container mx-auto p-4 md:p-8">
       <header className="mb-8 flex flex-wrap justify-between items-center gap-4">
         {/* Home Button */}
-        <Button variant="outline" size="sm" onClick={() => router.push('/')}>
+        <Button variant="outline" size="sm" onClick={() => {
+            const appBaseUrl = IS_PRODUCTION ? PROD_BASE_URL : '';
+            router.push(`${appBaseUrl}/`);
+        }}>
           <Home className="mr-2 h-4 w-4" /> Home
         </Button>
         <h1 className="text-2xl font-bold text-primary flex items-center">

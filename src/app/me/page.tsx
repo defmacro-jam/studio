@@ -18,6 +18,9 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { getGravatarUrl } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const PROD_BASE_URL = 'https://retro.patchwork.ai';
+
 function MePageContent() {
   const { currentUser, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -159,7 +162,8 @@ function MePageContent() {
         try {
             await signOut(auth);
             toast({ title: "Logged Out", description: "You have been successfully logged out." });
-            router.push('/login'); // Redirect to login page after logout
+            const appBaseUrl = IS_PRODUCTION ? PROD_BASE_URL : '';
+            router.push(`${appBaseUrl}/login`); // Redirect to login page after logout
         } catch (error) {
             console.error("Logout error:", error);
             toast({ title: "Logout Failed", description: "Could not log you out. Please try again.", variant: "destructive" });
