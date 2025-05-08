@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, type DragEvent } from 'react';
@@ -42,7 +41,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -572,8 +570,7 @@ function RetroSpectifyPageContent() {
   }, [toast]);
 
 
-  const handleAddItem = useCallback((category: Category) => {
-    return async (content: string) => {
+  const handleAddItem = useCallback(async (category: Category, content: string) => {
      if (!appUser || !activeTeamId) {
         console.warn("[Callback] handleAddItem: appUser or activeTeamId missing.");
         return;
@@ -593,7 +590,6 @@ function RetroSpectifyPageContent() {
         title: "Item Added",
         description: `Your item was added to "${category === 'discuss' ? 'Discussion Topics' : category === 'action' ? 'Action Items' : category === 'well' ? 'What Went Well' : 'What Could Be Improved'}".`,
       });
-    }
   }, [appUser, activeTeamId, toast]);
 
   const handleEditItem = useCallback(async (itemId: string, newContent: string) => {
@@ -1308,82 +1304,84 @@ const handleDeleteReply = useCallback(async (itemId: string, replyId: string) =>
                         </Card>
                     )}
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-                    <RetroSection
-                        title="What Went Well"
-                        category="well"
-                        items={filterItems('well')}
-                        currentUser={appUser}
-                        onAddItem={handleAddItem('well')}
-                        onAddReply={handleAddReply}
-                        onEditReply={handleEditReply}
-                        onDeleteReply={handleDeleteReply}
-                        onMoveItem={handleMoveItem}
-                        onEditItem={handleEditItem}
-                        onDeleteItem={handleDeleteItem}
-                        allowAddingItems={true}
-                        draggingItemId={draggingItemId}
-                        onDragStartItem={handleDragStart}
-                        onDragEndItem={handleDragEnd}
-                        className="bg-teal-50/50 border-teal-200 dark:bg-teal-900/20 dark:border-teal-700/50"
-                    />
-                    <RetroSection
-                        title="What Could Be Improved"
-                        category="improve"
-                        items={filterItems('improve')}
-                        currentUser={appUser}
-                        onAddItem={handleAddItem('improve')}
-                        onAddReply={handleAddReply}
-                        onEditReply={handleEditReply}
-                        onDeleteReply={handleDeleteReply}
-                        onMoveItem={handleMoveItem}
-                        onEditItem={handleEditItem}
-                        onDeleteItem={handleDeleteItem}
-                        allowAddingItems={true}
-                        draggingItemId={draggingItemId}
-                        onDragStartItem={handleDragStart}
-                        onDragEndItem={handleDragEnd}
-                        className="bg-amber-50/50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-700/50"
-                    />
-                    <RetroSection
-                        title="Discussion Topics"
-                        category="discuss"
-                        items={filterItems('discuss')}
-                        currentUser={appUser}
-                        onAddItem={handleAddItem('discuss')}
-                        onAddReply={handleAddReply}
-                        onEditReply={handleEditReply}
-                        onDeleteReply={handleDeleteReply}
-                        onMoveItem={handleMoveItem}
-                        onEditItem={handleEditItem}
-                        onDeleteItem={handleDeleteItem}
-                        allowAddingItems={true}
-                        draggingItemId={draggingItemId}
-                        onDragStartItem={handleDragStart}
-                        onDragEndItem={handleDragEnd}
-                        className="bg-blue-50/50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-700/50"
-                    />
-                    <RetroSection
-                        title="Action Items"
-                        category="action"
-                        items={filterItems('action')}
-                        currentUser={appUser}
-                        onAddItem={handleAddItem('action')}
-                        onAddReply={handleAddReply}
-                        onEditReply={handleEditReply}
-                        onDeleteReply={handleDeleteReply}
-                        onMoveItem={handleMoveItem}
-                        onEditItem={handleEditItem}
-                        onDeleteItem={handleDeleteItem}
-                        allowAddingItems={true}
-                        draggingItemId={draggingItemId}
-                        onDragStartItem={handleDragStart}
-                        onDragEndItem={handleDragEnd}
-                        className="bg-purple-50/50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-700/50"
-                        isDropTargetForActionGeneration={true}
-                    />
-                </div>
+                
+                {pollResponses.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+                      <RetroSection
+                          title="What Went Well"
+                          category="well"
+                          items={filterItems('well')}
+                          currentUser={appUser}
+                          onAddItem={(content) => handleAddItem('well', content)}
+                          onAddReply={handleAddReply}
+                          onEditReply={handleEditReply}
+                          onDeleteReply={handleDeleteReply}
+                          onMoveItem={handleMoveItem}
+                          onEditItem={handleEditItem}
+                          onDeleteItem={handleDeleteItem}
+                          allowAddingItems={true}
+                          draggingItemId={draggingItemId}
+                          onDragStartItem={handleDragStart}
+                          onDragEndItem={handleDragEnd}
+                          className="bg-teal-50/50 border-teal-200 dark:bg-teal-900/20 dark:border-teal-700/50"
+                      />
+                      <RetroSection
+                          title="What Could Be Improved"
+                          category="improve"
+                          items={filterItems('improve')}
+                          currentUser={appUser}
+                          onAddItem={(content) => handleAddItem('improve', content)}
+                          onAddReply={handleAddReply}
+                          onEditReply={handleEditReply}
+                          onDeleteReply={handleDeleteReply}
+                          onMoveItem={handleMoveItem}
+                          onEditItem={handleEditItem}
+                          onDeleteItem={handleDeleteItem}
+                          allowAddingItems={true}
+                          draggingItemId={draggingItemId}
+                          onDragStartItem={handleDragStart}
+                          onDragEndItem={handleDragEnd}
+                          className="bg-amber-50/50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-700/50"
+                      />
+                      <RetroSection
+                          title="Discussion Topics"
+                          category="discuss"
+                          items={filterItems('discuss')}
+                          currentUser={appUser}
+                          onAddItem={(content) => handleAddItem('discuss', content)}
+                          onAddReply={handleAddReply}
+                          onEditReply={handleEditReply}
+                          onDeleteReply={handleDeleteReply}
+                          onMoveItem={handleMoveItem}
+                          onEditItem={handleEditItem}
+                          onDeleteItem={handleDeleteItem}
+                          allowAddingItems={true}
+                          draggingItemId={draggingItemId}
+                          onDragStartItem={handleDragStart}
+                          onDragEndItem={handleDragEnd}
+                          className="bg-blue-50/50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-700/50"
+                      />
+                      <RetroSection
+                          title="Action Items"
+                          category="action"
+                          items={filterItems('action')}
+                          currentUser={appUser}
+                          onAddItem={(content) => handleAddItem('action', content)}
+                          onAddReply={handleAddReply}
+                          onEditReply={handleEditReply}
+                          onDeleteReply={handleDeleteReply}
+                          onMoveItem={handleMoveItem}
+                          onEditItem={handleEditItem}
+                          onDeleteItem={handleDeleteItem}
+                          allowAddingItems={true}
+                          draggingItemId={draggingItemId}
+                          onDragStartItem={handleDragStart}
+                          onDragEndItem={handleDragEnd}
+                          className="bg-purple-50/50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-700/50"
+                          isDropTargetForActionGeneration={true}
+                      />
+                  </div>
+                )}
             </>
         ) : null }
 
@@ -1428,4 +1426,3 @@ export default function RetroSpectifyPage() {
         </ProtectedRoute>
     );
 }
-
